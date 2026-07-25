@@ -1,0 +1,9 @@
+{
+  "name": "ui-lab",
+  "private": true,
+  "version": "2.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/restore-build.mjs"
+  }
+}
