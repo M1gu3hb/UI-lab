@@ -1,12 +1,16 @@
 import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, normalize, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
 
 const root = process.cwd();
 const archiveDir = join(root, 'bootstrap');
 const sourceDir = join(root, '.source');
 const outputDir = join(root, 'dist');
+const rawBase = 'https://raw.githubusercontent.com/M1gu3hb/UI-lab/main/bootstrap';
+const partCount = 14;
+const expectedArchiveHash = '3a267b8ff6b2ab0633320b223dd9fe5aa70246b5ccdff0215fdba265a390a9bd';
 
 function safePath(base, relativePath) {
   const clean = normalize(relativePath.replaceAll('\\', '/')).replace(/^([/\\])+/, '');
@@ -18,18 +22,43 @@ function safePath(base, relativePath) {
   return target;
 }
 
+async function readLocalParts() {
+  try {
+    const parts = (await readdir(archiveDir))
+      .filter((name) => /^part-\d+\.txt$/.test(name))
+      .sort();
+    if (!parts.length) return null;
+    return Promise.all(parts.map((name) => readFile(join(archiveDir, name), 'utf8')));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+async function fetchRepositoryParts() {
+  const parts = [];
+  for (let index = 0; index < partCount; index += 1) {
+    const name = `part-${String(index).padStart(3, '0')}.txt`;
+    const response = await fetch(`${rawBase}/${name}`, {
+      headers: { 'user-agent': 'ui-lab-vercel-build' },
+    });
+    if (!response.ok) {
+      throw new Error(`Unable to fetch ${name} from GitHub: ${response.status} ${response.statusText}`);
+    }
+    parts.push(await response.text());
+  }
+  return parts;
+}
+
 async function reconstructArchive() {
-  const parts = (await readdir(archiveDir))
-    .filter((name) => /^part-\d+\.txt$/.test(name))
-    .sort();
-
-  if (!parts.length) throw new Error('No bootstrap archive parts were found.');
-
-  const encoded = (await Promise.all(parts.map((name) => readFile(join(archiveDir, name), 'utf8'))))
-    .join('')
-    .replace(/\s+/g, '');
-
-  return Buffer.from(encoded, 'base64');
+  const parts = (await readLocalParts()) ?? (await fetchRepositoryParts());
+  const encoded = parts.join('').replace(/\s+/g, '');
+  const archive = Buffer.from(encoded, 'base64');
+  const hash = createHash('sha256').update(archive).digest('hex');
+  if (hash !== expectedArchiveHash) {
+    throw new Error(`Source archive integrity check failed: ${hash}`);
+  }
+  return archive;
 }
 
 async function extractZip(buffer, destination) {
