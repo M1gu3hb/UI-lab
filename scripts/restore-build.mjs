@@ -10,7 +10,7 @@ const sourceDir = join(root, '.source');
 const outputDir = join(root, 'dist');
 const rawBase = 'https://raw.githubusercontent.com/M1gu3hb/UI-lab/main/bootstrap';
 const partCount = 14;
-const expectedArchiveHash = '3a267b8ff6b2ab0633320b223dd9fe5aa70246b5ccdff0215fdba265a390a9bd';
+const expectedArchiveHash = '24bea0e9ddcc48bf13c01eb3622a68d78ef261586e249c1d2c9264a925832391';
 
 function safePath(base, relativePath) {
   const clean = normalize(relativePath.replaceAll('\\', '/')).replace(/^([/\\])+/, '');
