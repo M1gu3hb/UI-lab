@@ -13,13 +13,22 @@ permissions:
 
 jobs:
   restore:
-    if: ${{ hashFiles('bootstrap/part-*.txt') != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Detect source archive
+        id: archive
+        shell: bash
+        run: |
+          if compgen -G 'bootstrap/part-*.txt' > /dev/null; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+          fi
       - name: Reconstruct source archive
+        if: steps.archive.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -28,8 +37,10 @@ jobs:
           unzip -o ui-lab-source.zip
           rm -rf bootstrap ui-lab-source.zip
       - name: Validate reconstructed project
+        if: steps.archive.outputs.present == 'true'
         run: npm run build
       - name: Commit real source files
+        if: steps.archive.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
