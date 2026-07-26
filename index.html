@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es" data-style="skeuomorphism" data-variant="conservative" data-quality="full">
+<html lang="es" data-style="skeuo" data-variant="conservative" data-quality="full">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,8 +7,8 @@
   <meta name="description" content="Morphiq Material Lab: laboratorio independiente para diseñar y comparar Skeuomorphism, Glassmorphism y Liquid Glass." />
   <title>Morphiq Material Lab</title>
   <link rel="stylesheet" href="styles/base.css" />
-  <link rel="stylesheet" href="styles/skeuomorphism.css" />
-  <link rel="stylesheet" href="styles/glassmorphism.css" />
+  <link rel="stylesheet" href="styles/skeuo.css" />
+  <link rel="stylesheet" href="styles/glass.css" />
   <link rel="stylesheet" href="styles/liquid-glass.css" />
 </head>
 <body data-background="aurora">
@@ -56,8 +56,8 @@
           <legend>Contexto</legend>
           <label>Estilo
             <select id="styleSelect" name="style">
-              <option value="skeuomorphism">Skeuomorphism</option>
-              <option value="glassmorphism">Glassmorphism</option>
+              <option value="skeuo">Skeuomorphism</option>
+              <option value="glass">Glassmorphism</option>
               <option value="liquid-glass">Liquid Glass</option>
             </select>
           </label>
@@ -199,8 +199,8 @@
             <p id="labDescription">Objetos físicos, luz coherente, recorrido mecánico y materiales reconocibles.</p>
           </div>
           <div class="lab-switcher" role="tablist" aria-label="Laboratorios">
-            <button role="tab" aria-selected="true" data-style-switch="skeuomorphism">Skeuo</button>
-            <button role="tab" aria-selected="false" data-style-switch="glassmorphism">Glass</button>
+            <button role="tab" aria-selected="true" data-style-switch="skeuo">Skeuo</button>
+            <button role="tab" aria-selected="false" data-style-switch="glass">Glass</button>
             <button role="tab" aria-selected="false" data-style-switch="liquid-glass">Liquid</button>
           </div>
         </div>
@@ -214,7 +214,7 @@
               </div>
               <span class="quality-badge" id="qualityBadge">Full</span>
             </div>
-            <div id="materialStage" class="material-stage stage-skeuomorphism">
+            <div id="materialStage" class="material-stage stage-skeuo">
               <canvas id="liquidCanvas" aria-hidden="true"></canvas>
               <div class="stage-grid" aria-hidden="true"></div>
               <div id="featuredComponent" class="featured-component"></div>
@@ -361,8 +361,8 @@
     </filter>
   </svg>
 
-  <script src="scripts/skeuomorphism.js" defer></script>
-  <script src="scripts/glassmorphism.js" defer></script>
+  <script src="scripts/skeuo.js" defer></script>
+  <script src="scripts/glass.js" defer></script>
   <script src="scripts/liquid-renderer.js" defer></script>
   <script src="scripts/liquid-glass.js" defer></script>
   <script src="scripts/app.js" defer></script>

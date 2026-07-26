@@ -77,7 +77,7 @@
   element.addEventListener('pointercancel', release);
 }`;
 
-  window.MorphiqRecipes.glassmorphism = {
+  window.MorphiqRecipes.glass = {
     name: 'Glassmorphism',
     description: 'Lámina esmerilada estática sobre un fondo informativo; sin elasticidad ni deformación.',
     variants,

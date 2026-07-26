@@ -7,12 +7,12 @@
   const body = document.body;
 
   const labMeta = {
-    skeuomorphism: {
+    skeuo: {
       title: 'Skeuomorphism Lab',
       description: 'Objetos físicos, luz coherente, recorrido mecánico y materiales reconocibles.',
       note: 'Presiona: el control pierde elevación y entra en su alojamiento.'
     },
-    glassmorphism: {
+    glass: {
       title: 'Glassmorphism Lab',
       description: 'Láminas esmeriladas estáticas, jerarquía de opacidad y fondo visible.',
       note: 'El vidrio se eleva apenas; no se estira ni deforma.'
@@ -25,7 +25,7 @@
   };
 
   const state = {
-    style: 'skeuomorphism',
+    style: 'skeuo',
     variant: 'conservative',
     component: 'button',
     interactionState: 'rest',
@@ -67,7 +67,7 @@
 
   function materialClasses(extra = '') {
     const liquid = state.style === 'liquid-glass' ? ' liquid-elastic liquid-surface liquid-reactive' : '';
-    const surface = state.style === 'skeuomorphism' ? ' skeuo-surface' : state.style === 'glassmorphism' ? ' glass-surface' : '';
+    const surface = state.style === 'skeuo' ? ' skeuo-surface' : state.style === 'glass' ? ' glass-surface' : '';
     return `${extra}${liquid}${surface}`.trim();
   }
 
@@ -718,8 +718,8 @@
   function renderCompare() {
     const type = $('#compareSelect').value;
     const items = [
-      ['skeuomorphism','Skeuomorphic','Mecánica, alojamiento, grosor y recorrido físico.'],
-      ['glassmorphism','Glassmorphic','Lámina esmerilada estable con jerarquía de translucidez.'],
+      ['skeuo','Skeuomorphic','Mecánica, alojamiento, grosor y recorrido físico.'],
+      ['glass','Glassmorphic','Lámina esmerilada estable con jerarquía de translucidez.'],
       ['liquid-glass','Liquid Glass','Materia óptica elástica con refracción y ripple.']
     ];
     $('#compareGrid').innerHTML = items.map(([style,title,note]) => {
@@ -820,7 +820,7 @@
     });
 
     document.addEventListener('selectstart', event => {
-      if (root.dataset.style !== 'skeuomorphism') return;
+      if (root.dataset.style !== 'skeuo') return;
       if (!event.target.closest('.material-stage, .state-strip, .component-gallery, .compare-card__stage')) return;
       if (event.target.closest('input, textarea, select, pre, code, [contenteditable="true"]')) return;
       event.preventDefault();
@@ -875,7 +875,7 @@
     setBackground('aurora');
     setQuality('full');
     applyVariant('conservative');
-    setStyle('skeuomorphism',{applyPreset:false});
+    setStyle('skeuo',{applyPreset:false});
     setViewport('wide');
     updateContrastEstimate();
 

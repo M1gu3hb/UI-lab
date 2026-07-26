@@ -86,7 +86,7 @@
   element.addEventListener('lostpointercapture', release);
 }`;
 
-  window.MorphiqRecipes.skeuomorphism = {
+  window.MorphiqRecipes.skeuo = {
     name: 'Skeuomorphism',
     description: 'Mecánica física, textura sutil, cavidades y una fuente de luz coherente.',
     variants,
