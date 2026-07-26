@@ -1,9 +1,12 @@
 {
   "name": "ui-lab",
+  "version": "3.0.0",
   "private": true,
-  "version": "2.1.0",
   "type": "module",
+  "description": "Morphiq Material Lab — cocina de recetas de material para Morphiq UI",
   "scripts": {
-    "build": "node scripts/restore-build.mjs"
+    "validate": "node scripts/validate.mjs",
+    "build": "npm run validate && node scripts/build.mjs",
+    "preview": "python3 -m http.server 4173 -d dist"
   }
 }

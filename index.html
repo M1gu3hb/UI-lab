@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="es" data-style="skeuomorphism" data-variant="conservative" data-quality="full">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="description" content="Morphiq Material Lab: laboratorio independiente para diseñar y comparar Skeuomorphism, Glassmorphism y Liquid Glass." />
+  <title>Morphiq Material Lab</title>
+  <link rel="stylesheet" href="styles/base.css" />
+  <link rel="stylesheet" href="styles/skeuomorphism.css" />
+  <link rel="stylesheet" href="styles/glassmorphism.css" />
+  <link rel="stylesheet" href="styles/liquid-glass.css" />
+</head>
+<body data-background="aurora">
+  <a class="skip-link" href="#workspace">Saltar al laboratorio</a>
+
+  <div class="scene" aria-hidden="true">
+    <div class="scene__orb scene__orb--one"></div>
+    <div class="scene__orb scene__orb--two"></div>
+    <div class="scene__orb scene__orb--three"></div>
+    <div class="scene__grain"></div>
+  </div>
+
+  <header class="app-header">
+    <div class="brand-lockup">
+      <div class="brand-mark" aria-hidden="true"><span></span></div>
+      <div>
+        <h1>Morphiq Material Lab</h1>
+        <p>Research playground · recetas de material</p>
+      </div>
+    </div>
+
+    <nav class="view-tabs" aria-label="Vistas principales">
+      <button class="view-tab is-active" data-view="lab" aria-pressed="true">Laboratorio</button>
+      <button class="view-tab" data-view="compare" aria-pressed="false">Compare</button>
+    </nav>
+
+    <div class="header-actions">
+      <button class="icon-plain" id="openCommand" aria-label="Abrir paleta de comandos" title="Comandos">⌘</button>
+      <button class="icon-plain" id="toggleInspector" aria-label="Mostrar u ocultar inspector" title="Inspector">☷</button>
+    </div>
+  </header>
+
+  <div class="app-shell">
+    <aside class="inspector" id="inspector" aria-label="Inspector global">
+      <div class="inspector__header">
+        <div>
+          <p class="eyebrow">Global inspector</p>
+          <h2>Recipe controls</h2>
+        </div>
+        <button class="icon-plain" id="resetAll" aria-label="Restablecer todos los valores" title="Reset">↺</button>
+      </div>
+
+      <form id="controlForm" class="control-stack">
+        <fieldset>
+          <legend>Contexto</legend>
+          <label>Estilo
+            <select id="styleSelect" name="style">
+              <option value="skeuomorphism">Skeuomorphism</option>
+              <option value="glassmorphism">Glassmorphism</option>
+              <option value="liquid-glass">Liquid Glass</option>
+            </select>
+          </label>
+          <label>Variante
+            <select id="variantSelect" name="variant">
+              <option value="conservative">A · Conservadora</option>
+              <option value="expressive">B · Expresiva</option>
+              <option value="experimental">C · Experimental</option>
+            </select>
+          </label>
+          <label>Componente
+            <select id="componentSelect" name="component">
+              <option value="button">Button</option>
+              <option value="switch">Switch</option>
+              <option value="slider">Slider</option>
+              <option value="input">Input</option>
+              <option value="card">Card</option>
+              <option value="navigation">Navigation</option>
+              <option value="music">Music player</option>
+            </select>
+          </label>
+          <label>Estado
+            <select id="stateSelect" name="state">
+              <option value="rest">Rest</option>
+              <option value="hover">Hover</option>
+              <option value="focus">Focus</option>
+              <option value="pressed">Pressed</option>
+              <option value="disabled">Disabled</option>
+            </select>
+          </label>
+          <label>Fondo
+            <select id="backgroundSelect" name="background">
+              <option value="aurora">Aurora</option>
+              <option value="night">Gradiente nocturno</option>
+              <option value="sunset">Sunset</option>
+              <option value="tropical">Tropical</option>
+              <option value="landscape">Paisaje</option>
+              <option value="abstract">Formas abstractas</option>
+              <option value="light">Modo claro</option>
+            </select>
+          </label>
+          <label class="color-control">Color de acento
+            <input id="accentColor" name="accent" type="color" value="#6ae4ff" />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Material e iluminación</legend>
+          <label>Dirección de luz <output for="lightDirection">315°</output>
+            <input id="lightDirection" data-token="--light-angle" type="range" min="0" max="360" value="315" />
+          </label>
+          <label>Intensidad de luz <output for="lightIntensity">72%</output>
+            <input id="lightIntensity" data-token="--light-intensity" type="range" min="0" max="100" value="72" />
+          </label>
+          <label>Elevación <output for="elevation">16</output>
+            <input id="elevation" data-token="--material-depth" type="range" min="0" max="32" value="16" />
+          </label>
+          <label>Opacidad <output for="opacity">24%</output>
+            <input id="opacity" data-token="--material-opacity" type="range" min="6" max="88" value="24" />
+          </label>
+          <label>Blur <output for="blur">20px</output>
+            <input id="blur" data-token="--material-blur" type="range" min="0" max="40" value="20" />
+          </label>
+          <label>Border alpha <output for="borderAlpha">36%</output>
+            <input id="borderAlpha" data-token="--border-alpha" type="range" min="0" max="100" value="36" />
+          </label>
+          <label>Roughness visual <output for="roughness">42%</output>
+            <input id="roughness" data-token="--material-roughness" type="range" min="0" max="100" value="42" />
+          </label>
+          <label>Specular <output for="specular">64%</output>
+            <input id="specular" data-token="--material-specular" type="range" min="0" max="100" value="64" />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Óptica y física</legend>
+          <label>Refracción <output for="refraction">32%</output>
+            <input id="refraction" data-token="--material-refraction" type="range" min="0" max="100" value="32" />
+          </label>
+          <label>Dispersión cromática <output for="dispersion">8%</output>
+            <input id="dispersion" data-token="--material-dispersion" type="range" min="0" max="30" value="8" />
+          </label>
+          <label>Fuerza de onda <output for="ripple">48%</output>
+            <input id="ripple" data-token="--ripple-intensity" type="range" min="0" max="100" value="48" />
+          </label>
+          <label>Brillo de ondas <output for="waveBrightness">20%</output>
+            <input id="waveBrightness" data-token="--ripple-brightness" type="range" min="0" max="100" value="20" />
+          </label>
+          <label>Cantidad de ondas <output for="waveCount">2</output>
+            <input id="waveCount" data-token="--ripple-count" type="range" min="1" max="6" step="1" value="2" />
+          </label>
+          <label>Elasticity <output for="elasticity">56%</output>
+            <input id="elasticity" data-token="--motion-elasticity" type="range" min="0" max="100" value="56" />
+          </label>
+          <label>Stiffness <output for="stiffness">260</output>
+            <input id="stiffness" data-token="--motion-stiffness" type="range" min="80" max="520" value="260" />
+          </label>
+          <label>Damping <output for="damping">24</output>
+            <input id="damping" data-token="--motion-damping" type="range" min="8" max="48" value="24" />
+          </label>
+          <label>Stretch limit <output for="stretch">12%</output>
+            <input id="stretch" data-token="--stretch-limit" type="range" min="0" max="30" value="12" />
+          </label>
+          <label>Motion intensity <output for="motion">70%</output>
+            <input id="motion" data-token="--motion-intensity" type="range" min="0" max="100" value="70" />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Rendimiento y accesibilidad</legend>
+          <label class="toggle-row"><span>Reduced motion</span>
+            <input id="reducedMotion" type="checkbox" role="switch" />
+          </label>
+          <label>Quality level
+            <select id="qualitySelect" name="quality">
+              <option value="full">Full · WebGL</option>
+              <option value="balanced">Balanced · Canvas/SVG</option>
+              <option value="fallback">Fallback · CSS</option>
+            </select>
+          </label>
+          <label>Viewport preview
+            <select id="viewportSelect" name="viewport">
+              <option value="wide">Wide desktop</option>
+              <option value="laptop">Laptop</option>
+              <option value="tablet">Tablet</option>
+              <option value="mobile">Mobile</option>
+            </select>
+          </label>
+        </fieldset>
+      </form>
+    </aside>
+
+    <main id="workspace" class="workspace" tabindex="-1">
+      <section id="labView" class="view is-active" aria-labelledby="labHeading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Material system</p>
+            <h2 id="labHeading">Skeuomorphism Lab</h2>
+            <p id="labDescription">Objetos físicos, luz coherente, recorrido mecánico y materiales reconocibles.</p>
+          </div>
+          <div class="lab-switcher" role="tablist" aria-label="Laboratorios">
+            <button role="tab" aria-selected="true" data-style-switch="skeuomorphism">Skeuo</button>
+            <button role="tab" aria-selected="false" data-style-switch="glassmorphism">Glass</button>
+            <button role="tab" aria-selected="false" data-style-switch="liquid-glass">Liquid</button>
+          </div>
+        </div>
+
+        <div class="preview-shell" id="previewShell" data-viewport="wide">
+          <section class="panel material-playground" aria-labelledby="playgroundHeading">
+            <div class="panel__header">
+              <div>
+                <p class="eyebrow">01</p>
+                <h3 id="playgroundHeading">Material Playground</h3>
+              </div>
+              <span class="quality-badge" id="qualityBadge">Full</span>
+            </div>
+            <div id="materialStage" class="material-stage stage-skeuomorphism">
+              <canvas id="liquidCanvas" aria-hidden="true"></canvas>
+              <div class="stage-grid" aria-hidden="true"></div>
+              <div id="featuredComponent" class="featured-component"></div>
+              <div class="stage-note" id="stageNote">Arrastra, presiona y usa el teclado.</div>
+            </div>
+          </section>
+
+          <section class="panel interaction-panel" aria-labelledby="statesHeading">
+            <div class="panel__header">
+              <div><p class="eyebrow">02</p><h3 id="statesHeading">Interaction States</h3></div>
+            </div>
+            <div id="stateStrip" class="state-strip"></div>
+          </section>
+
+          <section class="panel mini-controls" aria-labelledby="lightingHeading">
+            <div class="panel__header"><div><p class="eyebrow">03</p><h3 id="lightingHeading">Lighting & Background</h3></div></div>
+            <div class="mini-control-grid">
+              <label>Light azimuth <input id="miniLight" type="range" min="0" max="360" value="315" /></label>
+              <label>Backdrop <select id="miniBackground"><option value="aurora">Aurora</option><option value="sunset">Sunset</option><option value="night">Night</option><option value="light">Light</option></select></label>
+            </div>
+          </section>
+
+          <section class="panel mini-controls" aria-labelledby="motionHeading">
+            <div class="panel__header"><div><p class="eyebrow">04</p><h3 id="motionHeading">Motion Controls</h3></div></div>
+            <div class="mini-control-grid">
+              <label>Motion <input id="miniMotion" type="range" min="0" max="100" value="70" /></label>
+              <label>Stiffness <input id="miniStiffness" type="range" min="80" max="520" value="260" /></label>
+            </div>
+          </section>
+
+          <section class="panel gallery-panel" aria-labelledby="galleryHeading">
+            <div class="panel__header">
+              <div><p class="eyebrow">05</p><h3 id="galleryHeading">Component Gallery</h3></div>
+              <label class="compact-select">Grupo
+                <select id="galleryFilter">
+                  <option value="all">Todos</option>
+                  <option value="actions">Actions</option>
+                  <option value="inputs">Inputs</option>
+                  <option value="navigation">Navigation</option>
+                  <option value="surfaces">Surfaces</option>
+                  <option value="feedback">Feedback</option>
+                  <option value="rich">Rich</option>
+                </select>
+              </label>
+            </div>
+            <div id="componentGallery" class="component-gallery"></div>
+          </section>
+
+          <section class="panel recipe-panel" aria-labelledby="recipeHeading">
+            <div class="panel__header">
+              <div><p class="eyebrow">06</p><h3 id="recipeHeading">Recipe Inspector</h3></div>
+              <button class="small-action" id="copyAllTokens">Copiar tokens</button>
+            </div>
+            <div class="recipe-layout">
+              <div>
+                <h4>Tokens activos</h4>
+                <dl id="tokenList" class="token-list"></dl>
+              </div>
+              <div>
+                <div class="code-tabs" role="tablist" aria-label="Código de receta">
+                  <button role="tab" class="is-active" data-code-tab="css-vars">CSS vars</button>
+                  <button role="tab" data-code-tab="css-class">Clase base</button>
+                  <button role="tab" data-code-tab="behavior">JavaScript</button>
+                  <button role="tab" data-code-tab="shader">Shader</button>
+                  <button role="tab" data-code-tab="example">Ejemplo</button>
+                </div>
+                <pre class="code-block"><code id="recipeCode"></code></pre>
+                <div class="recipe-actions">
+                  <button class="small-action" id="copyRecipe">Copiar bloque</button>
+                  <span id="dependencyNote">Sin dependencias externas.</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel accessibility-panel" aria-labelledby="accessHeading">
+            <div class="panel__header"><div><p class="eyebrow">07</p><h3 id="accessHeading">Accessibility Preview</h3></div></div>
+            <div class="access-grid">
+              <div class="access-sample">
+                <button class="demo-focus-target material-control">Focus target</button>
+                <p>El texto permanece fuera de la capa distorsionada.</p>
+              </div>
+              <label class="toggle-row"><span>Simular focus visible</span><input id="forceFocus" type="checkbox" role="switch" /></label>
+              <label class="toggle-row"><span>Escala de grises</span><input id="grayscaleMode" type="checkbox" role="switch" /></label>
+              <div class="contrast-readout"><span>Contraste estimado</span><strong id="contrastValue">7.2:1</strong></div>
+            </div>
+          </section>
+
+          <section class="panel responsive-panel" aria-labelledby="responsiveHeading">
+            <div class="panel__header"><div><p class="eyebrow">08</p><h3 id="responsiveHeading">Responsive Preview</h3></div></div>
+            <div class="responsive-ruler" aria-hidden="true"><span>320</span><span>768</span><span>1024</span><span>1440+</span></div>
+            <p>La misma receta se adapta a densidad, entrada táctil y presupuesto gráfico.</p>
+          </section>
+        </div>
+      </section>
+
+      <section id="compareView" class="view" aria-labelledby="compareHeading" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Side by side</p>
+            <h2 id="compareHeading">Compare</h2>
+            <p>El mismo patrón, tres modelos materiales radicalmente distintos.</p>
+          </div>
+          <label class="compact-select">Componente
+            <select id="compareSelect">
+              <option value="button">Button</option>
+              <option value="switch">Switch</option>
+              <option value="slider">Slider</option>
+              <option value="input">Input</option>
+              <option value="card">Card</option>
+              <option value="navigation">Navigation</option>
+              <option value="music">Music player</option>
+            </select>
+          </label>
+        </div>
+        <div id="compareGrid" class="compare-grid"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="commandDialog" class="command-dialog">
+    <form method="dialog">
+      <div class="command-search">
+        <span aria-hidden="true">⌘</span>
+        <input id="commandInput" aria-label="Buscar comando" placeholder="Cambiar estilo, fondo o componente…" autocomplete="off" />
+        <button value="close" aria-label="Cerrar">Esc</button>
+      </div>
+      <div id="commandList" class="command-list" role="listbox"></div>
+    </form>
+  </dialog>
+
+  <div id="toastRegion" class="toast-region" role="region" aria-live="polite" aria-label="Notificaciones"></div>
+
+  <svg width="0" height="0" aria-hidden="true" focusable="false">
+    <filter id="softNoise">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="4" result="noise" />
+      <feColorMatrix in="noise" type="saturate" values="0" result="gray" />
+      <feComponentTransfer in="gray" result="faded"><feFuncA type="table" tableValues="0 0.06" /></feComponentTransfer>
+      <feBlend in="SourceGraphic" in2="faded" mode="soft-light" />
+    </filter>
+    <filter id="liquidDisplace" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence id="liquidTurbulence" type="fractalNoise" baseFrequency="0.012 0.03" numOctaves="2" seed="11" result="noise" />
+      <feDisplacementMap id="liquidDisplacement" in="SourceGraphic" in2="noise" scale="8" xChannelSelector="R" yChannelSelector="B" />
+    </filter>
+  </svg>
+
+  <script src="scripts/skeuomorphism.js" defer></script>
+  <script src="scripts/glassmorphism.js" defer></script>
+  <script src="scripts/liquid-renderer.js" defer></script>
+  <script src="scripts/liquid-glass.js" defer></script>
+  <script src="scripts/app.js" defer></script>
+</body>
+</html>
