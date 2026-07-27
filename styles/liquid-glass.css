@@ -41,13 +41,17 @@
   --mq-ring: rgba(120, 224, 255, 0.85);
 
   /* ---- Tokens propios del material -------------------------------------- */
-  --mq-thick: 3.4px;        /* grosor del canto, 1.5–7px. Bajo 2 deja de leer como vidrio */
+  --mq-thick: 8px;          /* SUELO del canto en px. El espesor real se deriva del tamaño
+                               del control (20% del lado corto, tope 34px): un vidrio de 4px es
+                               ópticamente correcto y visualmente inexistente */
   --mq-iri: 0.16;           /* irisación del canto, 0–0.4. Sobre 0.25 se vuelve jabón */
   --mq-caustic: 0.62;       /* charco de luz proyectado bajo el cuerpo, 0–1 */
   --mq-flat: 0;             /* 0 = líquido deformable · 1 = lámina rígida */
   --mq-blur-scale: 0.55;    /* el vidrio dobla más de lo que difumina */
   --mq-thick-scale: 1;      /* multiplicador del grosor, además del acoplado al tamaño */
   --mq-profile: 2.4;        /* k del perfil de espesor: 2 = bisel circular, 4 = squircle de Apple */
+  --mq-dome: 0.62;          /* curvatura de cúpula sobre toda la superficie, 0–1. Es lo que hace
+                               que el fondo se doble también lejos del canto, no solo en el filo */
   --mq-radius: 18px;
 
   color: var(--mq-text, #f2fbff);
@@ -63,7 +67,7 @@
 [data-mq-material="liquid-glass"] .gallery-card,
 [data-mq-material="liquid-glass"] .switch-control,
 [data-mq-material="liquid-glass"] .knob,
-[data-mq-material="liquid-glass"] .field input,
+[data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),
 [data-mq-material="liquid-glass"] .field textarea,
 [data-mq-material="liquid-glass"] .field select,
 [data-mq-material="liquid-glass"] .top-nav-demo,
@@ -121,7 +125,7 @@ html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .ui-card,
 html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .gallery-card,
 html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .switch-control,
 html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .knob,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .field input,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),
 html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .field textarea,
 html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .field select,
 html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .top-nav-demo,
@@ -283,7 +287,7 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 [data-mq-material="liquid-glass"] .switch-control:focus-visible,
 [data-mq-material="liquid-glass"] .custom-slider:focus-visible,
 [data-mq-material="liquid-glass"] .knob:focus-visible,
-[data-mq-material="liquid-glass"] .field input:focus-visible,
+[data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]):focus-visible,
 [data-mq-material="liquid-glass"] .field textarea:focus-visible,
 [data-mq-material="liquid-glass"] .field select:focus-visible,
 [data-mq-material="liquid-glass"] [data-focus="true"] {
@@ -313,6 +317,7 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 [data-mq-material="liquid-glass"] .switch-control {
   --mq-radius: 999px;
   --mq-thick: 3.0px;
+  --mq-dome: 0.98;
   --mq-body: rgba(9, 22, 40, 0.44);
 }
 [data-mq-material="liquid-glass"] .switch-control[aria-checked="true"] {
@@ -345,6 +350,10 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
   --mq-radius: 50%;
   --mq-thick: 5.0px;
   --mq-iri: 0.26;
+  /* Un knob es una esfera de vidrio, no una lámina: la curvatura ocupa toda la
+     superficie. Es el mejor escaparate del material y merece el máximo. */
+  --mq-dome: 0.95;
+  --mq-profile: 2;
   --mq-body: rgba(11, 28, 48, 0.44);
 }
 
@@ -361,7 +370,7 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 
 /* Hueco / inset: los campos son la cara interior del vidrio, no la exterior.
    La luz entra por el borde opuesto al de las superficies elevadas. */
-[data-mq-material="liquid-glass"] .field input,
+[data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),
 [data-mq-material="liquid-glass"] .field textarea,
 [data-mq-material="liquid-glass"] .field select {
   --mq-radius: 12px;
@@ -372,7 +381,7 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
     0 2px 6px -2px rgba(2, 10, 24, 0.9) inset,
     0 -1px 0 0 rgba(255, 255, 255, 0.16) inset;
 }
-[data-mq-material="liquid-glass"] .field input::placeholder,
+[data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color])::placeholder,
 [data-mq-material="liquid-glass"] .field textarea::placeholder {
   color: rgba(206, 228, 244, 0.6);
 }
@@ -498,7 +507,7 @@ html[data-style="liquid-glass"] {
   [data-mq-material="liquid-glass"] .ui-button,
   [data-mq-material="liquid-glass"] .ui-card,
   [data-mq-material="liquid-glass"] .switch-control,
-  [data-mq-material="liquid-glass"] .field input,
+  [data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),
   [data-mq-material="liquid-glass"] .field textarea,
   [data-mq-material="liquid-glass"] .field select,
   [data-mq-material="liquid-glass"] .floating-dock,
@@ -569,8 +578,8 @@ html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-button--d
   color: #4a0713;
 }
 
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .field input,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .field input,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),
 html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .field textarea,
 html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .field textarea,
 html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .field select,
@@ -669,4 +678,58 @@ html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .tooltip-bubb
 html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .system-toast,
 html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .system-toast {
   --mq-body: rgba(252, 254, 255, 0.80);
+}
+
+/* ==========================================================================
+   Range slider
+   ==========================================================================
+   El control nativo llegaba sin `appearance: none`, así que Chromium pintaba su
+   propia pista encima del material. Y como los dos <input type=range> se apilan
+   con position:absolute, cualquier regla de material que les imponga
+   `position: relative` los saca del apilado: el segundo caía debajo del output
+   como una barra suelta. Aquí se resetea el control y se le da pista y pulgar
+   propios del material. */
+
+[data-mq-material="liquid-glass"] .range-slider input {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  height: 44px;
+}
+
+[data-mq-material="liquid-glass"] .range-slider input::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 999px;
+  /* Solo la primera pista pinta fondo: dos pistas superpuestas duplican el
+     tinte y el resultado lee más opaco que el resto del material. */
+  background: transparent;
+}
+[data-mq-material="liquid-glass"] .range-slider input.range-min::-webkit-slider-runnable-track {
+  background: rgba(8, 22, 38, 0.5);
+  box-shadow: 0 1px 3px rgba(2, 10, 24, 0.7) inset, 0 -1px 0 rgba(255, 255, 255, 0.16) inset;
+}
+[data-mq-material="liquid-glass"] .range-slider input::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 28%, #ffffff, #b9dcf0 62%, #7fb4cf);
+  box-shadow: 0 4px 10px rgba(2, 10, 24, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+}
+[data-mq-material="liquid-glass"] .range-slider input::-moz-range-track {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(8, 22, 38, 0.5);
+}
+[data-mq-material="liquid-glass"] .range-slider input::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 28%, #ffffff, #b9dcf0 62%, #7fb4cf);
+  box-shadow: 0 4px 10px rgba(2, 10, 24, 0.6);
 }

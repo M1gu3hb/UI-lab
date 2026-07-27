@@ -79,6 +79,7 @@
     uniform float u_flat;       /* 1.0 = lámina rígida (glass), 0.0 = líquido */
     uniform float u_exp;        /* exponente de la superelipse: 2 = círculo, 4 = squircle */
     uniform float u_profile;    /* k del perfil de espesor: 2 = circular, 4 = squircle */
+    uniform float u_dome;       /* curvatura de la cúpula sobre toda la superficie, 0–1 */
 
     /* ------------------------------------------------------------------
        Campo de la silueta: esquina superelíptica con gradiente analítico.
@@ -213,7 +214,29 @@
       float bevel = edge;
       float inside = t;
 
-      vec2 offset = gradient * nx * thickness * u_refraction * 4.0;
+      /* SEGUNDO TÉRMINO: la cúpula.
+         El bisel solo dobla dentro de su propio ancho, así que con un canto de
+         15px sobre una card de 170px el 82% de la superficie quedaba
+         ópticamente plano — medido: diferencia 0.00/255 entre refracción 0 y 1
+         en el interior. Un panel de vidrio real no es una lámina plana con el
+         borde biselado: es un casquete muy tendido sobre un cuerpo cilíndrico,
+         y esa curvatura de radio enorme desplaza suavemente el fondo en TODA la
+         superficie. Es lo que hace que el contenido de detrás "nade" al pasar
+         bajo el vidrio, no solo que se comprima en el filo. */
+      float reach = max(min(u_half.x, u_half.y), 1.0);
+
+      /* La cúpula NO puede usar el gradiente del SDF.
+         El gradiente de una caja apunta al borde más cercano, y cambia de eje
+         al cruzar las diagonales: usarlo para la cúpula devolvía el interior a
+         cuatro zonas de desplazamiento uniforme con costuras en X — el mismo
+         artefacto del round anterior, por otra vía. La normal de un casquete es
+         radial desde el centro, y eso es continuo en toda la superficie. */
+      vec2 unit = p / max(u_half, vec2(1.0));
+      float radial = min(length(unit), 1.0);
+      vec2 domeDir = radial > 1e-4 ? unit / max(length(unit), 1e-4) : vec2(0.0);
+      float domeMag = u_dome * smootherstep(0.0, 1.0, radial) * reach * 0.55;
+
+      vec2 offset = (gradient * nx * thickness * 4.0 + domeDir * domeMag) * u_refraction;
 
       /* El canto esmerila menos que el centro: ahí el vidrio es más delgado en
          el eje de visión y la imagen se conserva más limpia. */
@@ -222,7 +245,7 @@
 
       /* Dispersión cromática: solo en el canto y en la dirección de la normal,
          nunca como un aura RGB alrededor de todo el control. */
-      float chroma = u_dispersion * nx * thickness * 1.1;
+      float chroma = u_dispersion * (nx * thickness * 1.1 + domeMag * 0.35);
       vec3 refracted = center;
       if (chroma > 0.35) {
         refracted = vec3(
@@ -280,7 +303,7 @@
   const UNIFORM_NAMES = [
     'u_viewport', 'u_rect', 'u_pad', 'u_backdrop', 'u_half', 'u_radius', 'u_thickness',
     'u_refraction', 'u_dispersion', 'u_specular', 'u_frost', 'u_blurred', 'u_lightAngle', 'u_lightIntensity',
-    'u_body', 'u_lit', 'u_pressure', 'u_caustic', 'u_iri', 'u_impact', 'u_flat', 'u_exp', 'u_profile'
+    'u_body', 'u_lit', 'u_pressure', 'u_caustic', 'u_iri', 'u_impact', 'u_flat', 'u_exp', 'u_profile', 'u_dome'
   ];
 
   function compile(gl, type, source) {
@@ -314,6 +337,25 @@
     const parsed = [r / 255, g / 255, b / 255, a / 255];
     colorCache.set(key, parsed);
     return parsed;
+  }
+
+  /* Resuelve border-radius a píxeles reales.
+     getComputedStyle devuelve los porcentajes SIN resolver: `.knob` usa
+     border-radius: 50% y de ahí salía un radio de "50" leído como 50px sobre un
+     control de 82px. El resultado era una esquina superelíptica sobre una caja
+     cuadrada — un squircle donde el CSS pinta un círculo — con la costura en X
+     que partía el knob en cuatro cuadrantes. */
+  function resolveRadius(value, width, height) {
+    const parts = String(value ?? '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return 0;
+    const axis = (token, extent) => {
+      const parsed = Number.parseFloat(token);
+      if (!Number.isFinite(parsed)) return 0;
+      return token.includes('%') ? (parsed / 100) * extent : parsed;
+    };
+    const rx = axis(parts[0], width);
+    const ry = axis(parts[1] ?? parts[0], height);
+    return Math.min(rx, ry);
   }
 
   function number(value, fallback) {
@@ -652,8 +694,23 @@
       const jobs = [];
       for (const lens of this.lenses.values()) {
         if (!lens.visible || !lens.element.isConnected) continue;
-        const rect = lens.element.getBoundingClientRect();
+        let rect = lens.element.getBoundingClientRect();
         if (rect.width < 2 || rect.height < 2) continue;
+        /* getBoundingClientRect de un elemento con transform devuelve su caja
+           envolvente. El knob rota con --knob-angle, así que su rect crecía
+           hasta 1.41x y la lente se dibujaba más grande que el control. Se usa
+           la caja de layout, centrada donde el rect dice. */
+        const layoutWidth = lens.element.offsetWidth || rect.width;
+        const layoutHeight = lens.element.offsetHeight || rect.height;
+        if (Math.abs(layoutWidth - rect.width) > 1 || Math.abs(layoutHeight - rect.height) > 1) {
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          rect = {
+            left: cx - layoutWidth / 2, top: cy - layoutHeight / 2,
+            width: layoutWidth, height: layoutHeight,
+            right: cx + layoutWidth / 2, bottom: cy + layoutHeight / 2
+          };
+        }
         if (rect.bottom < -120 || rect.top > this.height + 120) continue;
         /* La capa compartida no hereda la opacidad del elemento, así que un
            tooltip con opacity:0 dejaba su vidrio flotando suelto en la página.
@@ -664,7 +721,7 @@
         if (lens.styleEpoch !== this.epoch || !lens.style) {
           const computed = getComputedStyle(lens.element);
           lens.style = {
-            radius: number(computed.borderTopLeftRadius, 12),
+            radius: resolveRadius(computed.borderTopLeftRadius, rect.width, rect.height),
             thickness: number(computed.getPropertyValue('--mq-thick'), 3),
             flat: number(computed.getPropertyValue('--mq-flat'), 0),
             body: parseColor(computed.getPropertyValue('--mq-body'), [0.08, 0.16, 0.26, 0.24]),
@@ -673,7 +730,8 @@
             iri: number(computed.getPropertyValue('--mq-iri'), 0.12),
             blurScale: number(computed.getPropertyValue('--mq-blur-scale'), 1),
             thickScale: number(computed.getPropertyValue('--mq-thick-scale'), 1),
-            profile: number(computed.getPropertyValue('--mq-profile'), 2.4)
+            profile: number(computed.getPropertyValue('--mq-profile'), 2.4),
+            dome: number(computed.getPropertyValue('--mq-dome'), 0.4)
           };
           lens.styleEpoch = this.epoch;
         }
@@ -711,9 +769,15 @@
            con un bisel de 4px la refracción vive en 4px y no se lee. Una card
            de 300px necesita vidrio grueso para que el efecto exista; un botón
            de 44px con ese grosor se volvería una lupa. */
+        /* --mq-thick es el suelo, no el valor. El espesor real se deriva de la
+           geometría del control: un botón de 44px lleva ~9px de canto y una card
+           de 170px lleva ~34px. Con un valor absoluto pequeño el canto era
+           correcto ópticamente para un vidrio de 4px de espesor — y por eso
+           invisible. El espesor es una decisión de diseño, no un detalle. */
         const shortSide = Math.min(rect.width, rect.height);
-        const sizeFactor = 1 + 4.4 * Math.min(1, Math.max(0, (shortSide - 40) / 240));
-        const thickness = style.thickness * style.thickScale * sizeFactor * dpr;
+        const geometric = Math.min(34, Math.max(style.thickness, shortSide * 0.20));
+        const thickness = geometric * style.thickScale * dpr;
+        lens.lastBevelCss = Number((thickness / dpr).toFixed(1));
         const { flat, body, lit, caustic, iri, blurScale } = style;
 
         const age = (time - lens.impact.time) / 1000;
@@ -731,6 +795,7 @@
         gl.uniform1f(this.uniforms.u_radius, clamped);
         gl.uniform1f(this.uniforms.u_exp, exponent);
         gl.uniform1f(this.uniforms.u_profile, style.profile);
+        gl.uniform1f(this.uniforms.u_dome, style.dome);
         gl.uniform1f(this.uniforms.u_thickness, Math.max(thickness, 1));
         gl.uniform1f(this.uniforms.u_refraction, this.tokens.refraction);
         gl.uniform1f(this.uniforms.u_dispersion, this.tokens.dispersion);
