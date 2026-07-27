@@ -39,6 +39,7 @@
   --mq-text: #f2fbff;
   --mq-brd: rgba(196, 232, 255, 0.44);
   --mq-ring: rgba(120, 224, 255, 0.85);
+  --mq-halo: rgba(2, 8, 18, 0.92);   /* halo del texto sin superficie propia */
 
   /* ---- Tokens propios del material -------------------------------------- */
   --mq-thick: 8px;          /* SUELO del canto en px. El espesor real se deriva del tamaño
@@ -224,10 +225,10 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 }
 
 [data-mq-material="liquid-glass"] .ui-button--tertiary {
-  --mq-body: rgba(12, 30, 52, 0.30);
+  --mq-body: rgba(12, 30, 52, 0.58);
   --mq-thick: 2.6px;
   --mq-brd: rgba(196, 232, 255, 0.22);
-  background: var(--mq-body, rgba(12, 30, 52, 0.30));
+  background: var(--mq-body, rgba(12, 30, 52, 0.58));
   box-shadow: none;
 }
 
@@ -451,9 +452,20 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
    El arquetipo que más se olvida. Un material puede verse increíble en un
    botón de 44px y volver ilegible un párrafo de 14px encima. */
 
+[data-mq-material="liquid-glass"] .gallery-card h4 {
+  /* La galería dejó de ser vidrio, así que su título quedó sobre el fondo
+     crudo y cayó a 4.31:1 sobre el peor fondo. Sin superficie que lo sostenga,
+     la legibilidad la tiene que dar el propio texto. */
+  color: var(--mq-text, #f2fbff);
+  /* --mq-halo se invierte con el tono: forzar blanco aquí arreglaba el tono
+     oscuro y rompía el claro. */
+  text-shadow:
+    0 1px 3px var(--mq-halo, rgba(2, 8, 18, 0.95)),
+    0 0 14px var(--mq-halo, rgba(2, 8, 18, 0.75));
+}
+
 [data-mq-material="liquid-glass"] .ui-card h5,
 [data-mq-material="liquid-glass"] .ui-card strong,
-[data-mq-material="liquid-glass"] .gallery-card h4,
 [data-mq-material="liquid-glass"] .breadcrumbs,
 [data-mq-material="liquid-glass"] .step-indicator span {
   color: var(--mq-text, #f2fbff);
@@ -559,6 +571,7 @@ html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] {
   --mq-text: #0a1c2c;
   --mq-brd: rgba(38, 74, 104, 0.34);
   --mq-ring: rgba(14, 116, 168, 0.9);
+  --mq-halo: rgba(248, 252, 255, 0.95);
   --mq-iri: 0.20;
 }
 
