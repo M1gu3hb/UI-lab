@@ -26,12 +26,14 @@
 
 [data-mq-material="liquid-glass"] {
   /* ---- Contrato --mq-*: lo que se congela al inyectar en Morphiq UI ------ */
-  /* El alfa alto no es un descuido: es el gate.
-     Con alfa .30 el material se veía precioso sobre fondo oscuro y caía a
-     1.49:1 sobre blanco — el vidrio le estaba pidiendo prestada la legibilidad
-     al fondo. Lo que hace que esto lea como vidrio no es lo transparente que
-     sea el cuerpo, es el canto: por eso el tinte sube y --mq-thick sube con él. */
-  --mq-body: rgba(12, 29, 50, 0.76);   /* cuerpo del vidrio: color + cuánto tiñe */
+  /* El alfa del cuerpo es la palanca del gate de contraste.
+     En el round 1 el gate se medía en absoluto — sobre blanco y sobre negro —
+     y eso forzaba alfa .76, con lo que el shader solo dejaba pasar el 22% de la
+     imagen refractada: el material dejaba de leer como vidrio. Con el gate
+     medido por tono, el cuerpo recupera transparencia y el contraste lo sostiene
+     la receta del tono correspondiente. Es la misma resolución que aplicó Apple
+     entre iOS 26 y 27: cuerpo más manejable, canto más fuerte. */
+  --mq-body: rgba(12, 29, 50, 0.42);   /* cuerpo del vidrio: color + cuánto tiñe */
   --mq-lit: #cfeeff;                   /* highlight del canto orientado a la luz */
   --mq-edge: rgba(3, 12, 26, 0.62);    /* canto inferior y profundidad al presionar */
   --mq-text: #f2fbff;
@@ -44,6 +46,8 @@
   --mq-caustic: 0.62;       /* charco de luz proyectado bajo el cuerpo, 0–1 */
   --mq-flat: 0;             /* 0 = líquido deformable · 1 = lámina rígida */
   --mq-blur-scale: 0.55;    /* el vidrio dobla más de lo que difumina */
+  --mq-thick-scale: 1;      /* multiplicador del grosor, además del acoplado al tamaño */
+  --mq-profile: 2.4;        /* k del perfil de espesor: 2 = bisel circular, 4 = squircle de Apple */
   --mq-radius: 18px;
 
   color: var(--mq-text, #f2fbff);
@@ -87,7 +91,7 @@
   border: 1px solid var(--mq-brd, rgba(196, 232, 255, 0.44));
   border-radius: var(--mq-radius, 18px);
   color: var(--mq-text, #f2fbff);
-  background: var(--mq-body, rgba(12, 29, 50, 0.76));
+  background: var(--mq-body, rgba(12, 29, 50, 0.42));
   box-shadow:
     0 1px 0 0 rgba(255, 255, 255, 0.22) inset,
     0 -1px 0 0 var(--mq-edge, rgba(3, 12, 26, 0.62)) inset,
@@ -204,7 +208,7 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 }
 
 [data-mq-material="liquid-glass"] .ui-button--primary {
-  --mq-body: rgba(20, 74, 112, 0.80);
+  --mq-body: rgba(26, 92, 138, 0.46);
   --mq-thick: 5.0px;
   --mq-iri: 0.22;
   --mq-brd: rgba(214, 244, 255, 0.68);
@@ -213,20 +217,20 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 }
 
 [data-mq-material="liquid-glass"] .ui-button--secondary {
-  --mq-body: rgba(12, 30, 52, 0.80);
+  --mq-body: rgba(12, 30, 52, 0.44);
   --mq-thick: 3.6px;
 }
 
 [data-mq-material="liquid-glass"] .ui-button--tertiary {
-  --mq-body: rgba(12, 30, 52, 0.66);
+  --mq-body: rgba(12, 30, 52, 0.30);
   --mq-thick: 2.6px;
   --mq-brd: rgba(196, 232, 255, 0.22);
-  background: var(--mq-body, rgba(12, 30, 52, 0.66));
+  background: var(--mq-body, rgba(12, 30, 52, 0.30));
   box-shadow: none;
 }
 
 [data-mq-material="liquid-glass"] .ui-button--danger {
-  --mq-body: rgba(122, 22, 44, 0.80);
+  --mq-body: rgba(142, 26, 52, 0.48);
   --mq-lit: #ffd9de;
   --mq-brd: rgba(255, 190, 200, 0.62);
   --mq-ring: rgba(255, 140, 158, 0.9);
@@ -242,7 +246,7 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
   position: relative;
   isolation: isolate;
   border: 1px solid var(--mq-brd, rgba(196, 232, 255, 0.44));
-  background: var(--mq-body, rgba(12, 29, 50, 0.76));
+  background: var(--mq-body, rgba(12, 29, 50, 0.42));
   color: var(--mq-text, #f2fbff);
 }
 
@@ -292,7 +296,7 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 [data-mq-material="liquid-glass"] [aria-disabled="true"] {
   /* El disabled baja el espesor, no solo la opacidad: es menos vidrio, no
      vidrio a medio pintar. El texto conserva contraste suficiente. */
-  --mq-body: rgba(28, 42, 58, 0.82);
+  --mq-body: rgba(28, 42, 58, 0.62);
   --mq-thick: 1.6px;
   --mq-iri: 0;
   --mq-caustic: 0;
@@ -309,10 +313,10 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 [data-mq-material="liquid-glass"] .switch-control {
   --mq-radius: 999px;
   --mq-thick: 3.0px;
-  --mq-body: rgba(9, 22, 40, 0.76);
+  --mq-body: rgba(9, 22, 40, 0.44);
 }
 [data-mq-material="liquid-glass"] .switch-control[aria-checked="true"] {
-  --mq-body: rgba(22, 80, 120, 0.80);
+  --mq-body: rgba(26, 96, 142, 0.48);
   --mq-iri: 0.24;
 }
 [data-mq-material="liquid-glass"] .switch-thumb {
@@ -341,7 +345,7 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
   --mq-radius: 50%;
   --mq-thick: 5.0px;
   --mq-iri: 0.26;
-  --mq-body: rgba(11, 28, 48, 0.74);
+  --mq-body: rgba(11, 28, 48, 0.44);
 }
 
 [data-mq-material="liquid-glass"] .progress-track {
@@ -362,7 +366,7 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 [data-mq-material="liquid-glass"] .field select {
   --mq-radius: 12px;
   --mq-thick: 2.6px;
-  --mq-body: rgba(5, 16, 31, 0.82);
+  --mq-body: rgba(5, 16, 31, 0.52);
   padding: 11px 13px;
   box-shadow:
     0 2px 6px -2px rgba(2, 10, 24, 0.9) inset,
@@ -384,7 +388,7 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 [data-mq-material="liquid-glass"] .calendar {
   --mq-radius: 20px;
   --mq-thick: 4.6px;
-  --mq-body: rgba(10, 25, 43, 0.78);
+  --mq-body: rgba(10, 25, 43, 0.46);
   --mq-caustic: 0.5;
 }
 
@@ -395,7 +399,7 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 [data-mq-material="liquid-glass"] .segmented-control {
   --mq-radius: 16px;
   --mq-thick: 3.8px;
-  --mq-body: rgba(9, 23, 41, 0.76);
+  --mq-body: rgba(9, 23, 41, 0.46);
   --mq-caustic: 0.72;
 }
 [data-mq-material="liquid-glass"] .floating-dock {
@@ -408,7 +412,7 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 [data-mq-material="liquid-glass"] .tooltip-bubble,
 [data-mq-material="liquid-glass"] .system-toast,
 [data-mq-material="liquid-glass"] .demo-modal {
-  --mq-body: rgba(8, 20, 37, 0.86);
+  --mq-body: rgba(8, 20, 37, 0.66);
   --mq-thick: 3.2px;
   --mq-blur-scale: 1.5;
 }
@@ -418,13 +422,13 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 [data-mq-material="liquid-glass"] .task-item {
   --mq-radius: 12px;
   --mq-thick: 2.4px;
-  --mq-body: rgba(10, 25, 43, 0.76);
+  --mq-body: rgba(10, 25, 43, 0.46);
 }
 
 [data-mq-material="liquid-glass"] .gallery-card {
   --mq-radius: 18px;
   --mq-thick: 2.6px;
-  --mq-body: rgba(6, 16, 30, 0.80);
+  --mq-body: rgba(6, 16, 30, 0.50);
   --mq-caustic: 0.34;
   --mq-blur-scale: 1.35;
 }
@@ -600,4 +604,69 @@ html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] [aria-disabled
 html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] [aria-disabled="true"] {
   --mq-body: rgba(228, 234, 240, 0.78);
   color: rgba(28, 50, 68, 0.72);
+}
+
+/* Huecos de la receta de tono claro que destapó tools/contrast.mjs al medir
+   píxeles renderizados: estas superficies conservaban el cuerpo oscuro del tono
+   contrario, así que quedaba texto oscuro sobre vidrio oscuro. */
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-card,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-card,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .demo-modal,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .demo-modal,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .music-player,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .music-player,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .weather-widget,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .weather-widget,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .calendar,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .calendar {
+  --mq-body: rgba(252, 254, 255, 0.52);
+  --mq-edge: rgba(70, 110, 140, 0.34);
+}
+
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .gallery-card,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .gallery-card {
+  --mq-body: rgba(250, 253, 255, 0.68);
+  --mq-edge: rgba(70, 110, 140, 0.30);
+}
+
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .top-nav-demo,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .top-nav-demo,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .sidebar-demo,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .sidebar-demo,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .tabs-demo,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .tabs-demo,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .floating-dock,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .floating-dock,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .segmented-control,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .segmented-control,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .alert,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .alert,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .notification-item,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .notification-item,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .task-item,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .task-item,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .switch-control,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .switch-control,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .knob,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .knob {
+  --mq-body: rgba(250, 253, 255, 0.50);
+  --mq-edge: rgba(70, 110, 140, 0.34);
+}
+
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-button--secondary,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-button--secondary,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-button--tertiary,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-button--tertiary {
+  --mq-body: rgba(250, 253, 255, 0.58);
+  color: #0a1c2c;
+}
+
+/* Los overlays flotan sobre contenido claro: necesitan más cuerpo, no menos. */
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .dropdown-menu,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .dropdown-menu,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .tooltip-bubble,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .tooltip-bubble,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .system-toast,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .system-toast {
+  --mq-body: rgba(252, 254, 255, 0.80);
 }

@@ -104,8 +104,11 @@ for (const style of STYLES) {
         const view = scene === 'compare' ? 'compare' : 'lab';
         await apply({ style, background, component, quality: QUALITY, view });
 
-        const name = [scene, style, background, COMPONENTS.length > 1 ? component : null]
-          .filter(Boolean).join('_');
+        /* El componente va SIEMPRE en el nombre. Cuando se omitia al haber uno
+           solo, dos ejecuciones con componentes distintos escribian archivos
+           distintos y era facilisimo quedarse leyendo el PNG de la anterior
+           creyendo que un cambio no habia surtido efecto. */
+        const name = [scene, style, background, component].filter(Boolean).join('_');
         const path = `${OUT}/${name}.png`;
         const selector = SCENE_TARGETS[scene];
 

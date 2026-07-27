@@ -68,7 +68,6 @@
     uniform float u_refraction;
     uniform float u_dispersion;
     uniform float u_specular;
-    uniform float u_blur;
     uniform float u_lightAngle;
     uniform float u_lightIntensity;
     uniform vec4 u_body;        /* tinte propio del vidrio, RGBA */
@@ -78,11 +77,61 @@
     uniform float u_iri;        /* irisación cromática del canto */
     uniform vec4 u_impact;      /* x, y locales · edad en s · fuerza */
     uniform float u_flat;       /* 1.0 = lámina rígida (glass), 0.0 = líquido */
+    uniform float u_exp;        /* exponente de la superelipse: 2 = círculo, 4 = squircle */
+    uniform float u_profile;    /* k del perfil de espesor: 2 = circular, 4 = squircle */
 
-    /* Distancia con signo a una caja redondeada. Negativa dentro. */
-    float sdRoundBox(vec2 p, vec2 b, float r) {
-      vec2 q = abs(p) - b + r;
-      return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+    /* ------------------------------------------------------------------
+       Campo de la silueta: esquina superelíptica con gradiente analítico.
+
+       POR QUÉ NO UNA CAJA REDONDEADA
+       El gradiente de una caja redondeada es exactamente constante a lo largo
+       de cada lado recto — (0,-1) arriba, (1,0) a la derecha — y en el punto
+       de tangencia donde el arco encuentra el lado la curvatura salta de 1/r a
+       0. Como la refracción se deriva de ese gradiente, el resultado era la
+       tarjeta partida en cuatro figuras geométricas con costuras a 45° en las
+       esquinas. No era una impresión: era la geometría.
+
+       Una superelipse |x/r|^n + |y/r|^n = 1 con n > 2 tiene curvatura CERO en
+       los puntos donde toca los ejes, así que empalma con el lado recto de
+       forma C² y la costura desaparece. Es lo que Apple llama continuous
+       corners.
+
+       No hay SDF exacta en forma cerrada; se normaliza el campo implícito por
+       su gradiente, que es exacto a primer orden en la frontera — y solo se
+       usa dentro de unos pocos píxeles de ella.
+
+       Devuelve vec3(distancia, normal.x, normal.y). La normal es analítica, no
+       por diferencias finitas: además de ser más barata, es continua a través
+       de la unión arco-recta, que es justo donde las diferencias finitas con
+       epsilon de 1px producían el salto.
+       ------------------------------------------------------------------ */
+    vec3 squircleField(vec2 p, vec2 b, float r, float n) {
+      vec2 s = sign(p + vec2(1e-6));
+      float rr = max(r, 0.5);
+      vec2 q = abs(p) - b + rr;
+      vec2 c = max(q, 0.0);
+
+      if (c.x > 0.0 || c.y > 0.0) {
+        vec2 t = c / rr;
+        vec2 tp = pow(max(t, vec2(1e-4)), vec2(n - 1.0));
+        float F = tp.x * t.x + tp.y * t.y - 1.0;
+        vec2 g = (n / rr) * tp;
+        float len = max(length(g), 1e-6);
+        return vec3(F / len, s * (g / len));
+      }
+
+      /* Interior liso: la normal apunta al borde más cercano. */
+      float d = max(q.x, q.y) - rr;
+      vec2 nrm = (q.x > q.y) ? vec2(s.x, 0.0) : vec2(0.0, s.y);
+      return vec3(d, nrm);
+    }
+
+    /* Smootherstep: C², frente al C¹ de smoothstep. El salto de una derivada a
+       la otra es exactamente lo que quita las costuras — si la segunda derivada
+       del campo es continua, la curvatura no salta. */
+    float smootherstep(float a, float b, float x) {
+      float t = clamp((x - a) / (b - a), 0.0, 1.0);
+      return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
     }
 
     /* El esmerilado no se calcula por fragmento.
@@ -105,46 +154,75 @@
       /* Presión: el material se comprime y el canto se ensancha. Más vidrio en
          el camino óptico significa más distorsión — no es un truco de brillo. */
       float thickness = u_thickness * (1.0 + u_pressure * 0.85);
-      float sd = sdRoundBox(p, u_half, u_radius);
 
-      /* Tensión superficial: el impacto deforma el campo de espesor. La onda se
-         lee como deformación del material, no como un halo que se expande. */
+      vec3 field = squircleField(p, u_half, u_radius, u_exp);
+      float sd = field.x;
+      vec2 gradient = field.yz;
+
+      /* Curvatura de la silueta: cero en los lados rectos, máxima en el
+         cuadrante de esquina. Un canto curvo concentra más luz que uno recto —
+         es lo que hace que el highlight recorra el material en vez de quedarse
+         como una barra uniforme de canto a canto. */
+      float eps = 2.0;
+      vec2 gx = squircleField(p + vec2(eps, 0.0), u_half, u_radius, u_exp).yz;
+      vec2 gy = squircleField(p + vec2(0.0, eps), u_half, u_radius, u_exp).yz;
+      float curvature = clamp((abs(gx.x - gradient.x) + abs(gy.y - gradient.y)) * 14.0, 0.0, 1.0);
+
+      /* Tensión superficial. La onda deforma el CAMPO DE ESPESOR, no se suma al
+         desplazamiento final. Sumarla al offset movía el fondo entero de un
+         lado a otro, y sobre un fondo con estructura eso lee como temblor —
+         que es exactamente lo que Miguel vio al pasar el mouse por las cards. */
       float wave = 0.0;
       if (u_impact.w > 0.001 && u_flat < 0.5) {
         float age = u_impact.z;
-        float front = age * 620.0;
+        float front = age * 560.0;
         float ring = length(p - u_impact.xy) - front;
-        float packet = exp(-ring * ring / (2.0 * 46.0 * 46.0));
-        wave = sin(ring * 0.055) * packet * u_impact.w * exp(-age * 3.1);
+        float packet = exp(-ring * ring / (2.0 * 52.0 * 52.0));
+        wave = sin(ring * 0.045) * packet * u_impact.w * exp(-age * 3.4);
       }
 
-      /* Perfil de espesor: 0 en el perímetro, 1 hacia dentro del canto. El
-         bisel es un cuarto de círculo, que es lo que hace que la luz entre por
-         arriba, viaje por el canto y salga por abajo. */
-      float inside = clamp(-sd / max(thickness, 0.5), 0.0, 1.0);
-      float bevel = 1.0 - inside;
+      /* Profundidad normalizada dentro del bisel: 0 en el filo, 1 en el
+         interior plano. La onda ensancha y adelgaza el bisel localmente, que es
+         cómo se propaga la tensión en un líquido con espesor. */
+      float bevelWidth = max(thickness * (1.0 + wave * 0.9), 0.5);
+      float t = clamp(-sd / bevelWidth, 0.0, 1.0);
 
-      /* Normal del canto: gradiente del SDF por diferencias finitas. */
-      vec2 epsilon = vec2(1.0, 0.0);
-      vec2 gradient = normalize(vec2(
-        sdRoundBox(p + epsilon.xy, u_half, u_radius) - sdRoundBox(p - epsilon.xy, u_half, u_radius),
-        sdRoundBox(p + epsilon.yx, u_half, u_radius) - sdRoundBox(p - epsilon.yx, u_half, u_radius)
-      ) + vec2(0.0001));
+      /* Perfil de superficie squircle: h(t) = (1 - (1-t)^k)^(1/k), con k = 4.
+         La rampa lineal anterior tenía una torcedura dura donde terminaba el
+         bisel, y esa torcedura era la línea recta paralela a cada borde que se
+         veía en las cards. Aquí la derivada se anula suavemente hacia el
+         interior y es vertical en el filo, que es como se comporta el canto de
+         un vidrio con espesor real. */
+      /* k es un token, no una constante. k = 4 es el perfil de Apple, con un
+         hombro muy marcado: toda la refracción vive en los primeros píxeles del
+         canto. k = 2 es el bisel circular y reparte la lente por todo el canto,
+         que es lo que hace que la distorsión se lea en una card grande. Entre
+         medias hay un continuo, y esa es la perilla. */
+      float k = max(u_profile, 1.2);
+      float u = 1.0 - t;
+      float uk = pow(max(u, 1e-4), k);
+      float slope = pow(max(u, 1e-4), k - 1.0) * pow(max(1.0 - uk, 1e-4), 1.0 / k - 1.0);
 
-      /* LA CLAVE: la distorsión es máxima en el perímetro y ~0 en el centro.
-         Un vidrio con espesor es una lente; una capa translúcida no lo es. */
-      float lensWeight = pow(bevel, 2.2) + abs(wave) * 1.4;
-      vec2 offset = gradient * lensWeight * thickness * u_refraction * 2.4
-                  + gradient * wave * 26.0;
+      /* Componente horizontal de la normal de superficie. Satura en 1 en el
+         filo y cae a 0 en el interior, sin meseta y sin discontinuidad: es la
+         magnitud de refracción derivada de la superficie, no una potencia
+         elegida a ojo. */
+      float nx = (slope / sqrt(1.0 + slope * slope)) * mix(1.0, 1.22, curvature);
+      /* Caída C² para los términos ópticos, más ancha que la refracción. */
+      float edge = 1.0 - smootherstep(0.0, 1.0, t);
+      float bevel = edge;
+      float inside = t;
 
-      /* El canto esmerila menos que el centro: ahi el vidrio es mas delgado en
-         el eje de vision y la imagen se conserva mas limpia. */
-      float frost = u_frost * mix(1.0, 0.4, bevel);
+      vec2 offset = gradient * nx * thickness * u_refraction * 4.0;
+
+      /* El canto esmerila menos que el centro: ahí el vidrio es más delgado en
+         el eje de visión y la imagen se conserva más limpia. */
+      float frost = u_frost * mix(1.0, 0.45, edge);
       vec3 center = sampleGlass(v_screen + offset, frost);
 
       /* Dispersión cromática: solo en el canto y en la dirección de la normal,
          nunca como un aura RGB alrededor de todo el control. */
-      float chroma = u_dispersion * lensWeight * thickness * 0.9;
+      float chroma = u_dispersion * nx * thickness * 1.1;
       vec3 refracted = center;
       if (chroma > 0.35) {
         refracted = vec3(
@@ -162,9 +240,9 @@
          del ángulo de luz y de la curvatura, no de la posición del cursor. */
       vec2 lightDirection = vec2(cos(u_lightAngle), sin(u_lightAngle));
       float facing = dot(gradient, -lightDirection);
-      float band = pow(max(facing, 0.0), 2.6) * smoothstep(0.0, 0.85, bevel) * (1.0 - inside);
-      float rim = pow(max(-facing, 0.0), 6.0) * pow(bevel, 2.0) * 0.4;
-      float fresnel = pow(bevel, 3.4);
+      float band = pow(max(facing, 0.0), 2.2) * edge * mix(0.5, 1.0, curvature);
+      float rim = pow(max(-facing, 0.0), 5.0) * edge * edge * 0.45;
+      float fresnel = edge * edge * edge;
 
       color += u_lit * band * u_specular * u_lightIntensity * 0.78;
       color += vec3(1.0) * rim * u_specular * u_lightIntensity * 0.55;
@@ -188,7 +266,7 @@
          objeto en la página en vez de dejarlo flotando. */
       float contact = exp(-outside / 2.6) * 0.30;
 
-      float alpha = 1.0 - smoothstep(-0.9, 0.9, sd);
+      float alpha = 1.0 - smootherstep(-1.0, 1.0, sd);
       float outerAlpha = (1.0 - alpha) * clamp(caustic + contact, 0.0, 1.0);
 
       vec3 outerColor = mix(vec3(0.0), u_lit, clamp(caustic * 1.4, 0.0, 1.0));
@@ -202,7 +280,7 @@
   const UNIFORM_NAMES = [
     'u_viewport', 'u_rect', 'u_pad', 'u_backdrop', 'u_half', 'u_radius', 'u_thickness',
     'u_refraction', 'u_dispersion', 'u_specular', 'u_frost', 'u_blurred', 'u_lightAngle', 'u_lightIntensity',
-    'u_body', 'u_lit', 'u_pressure', 'u_caustic', 'u_iri', 'u_impact', 'u_flat'
+    'u_body', 'u_lit', 'u_pressure', 'u_caustic', 'u_iri', 'u_impact', 'u_flat', 'u_exp', 'u_profile'
   ];
 
   function compile(gl, type, source) {
@@ -593,7 +671,9 @@
             lit: parseColor(computed.getPropertyValue('--mq-lit'), [1, 1, 1, 1]),
             caustic: number(computed.getPropertyValue('--mq-caustic'), 0.5),
             iri: number(computed.getPropertyValue('--mq-iri'), 0.12),
-            blurScale: number(computed.getPropertyValue('--mq-blur-scale'), 1)
+            blurScale: number(computed.getPropertyValue('--mq-blur-scale'), 1),
+            thickScale: number(computed.getPropertyValue('--mq-thick-scale'), 1),
+            profile: number(computed.getPropertyValue('--mq-profile'), 2.4)
           };
           lens.styleEpoch = this.epoch;
         }
@@ -624,7 +704,16 @@
 
       for (const { lens, rect, style, pressure } of jobs) {
         const radius = style.radius * dpr;
-        const thickness = style.thickness * dpr;
+        /* Grosor acoplado al tamaño.
+           Apple lo dice explícitamente: al crecer, un elemento de Liquid Glass
+           "casts deeper, richer shadows, has more pronounced lensing and
+           refraction effects". Y hay una razón práctica además de la física:
+           con un bisel de 4px la refracción vive en 4px y no se lee. Una card
+           de 300px necesita vidrio grueso para que el efecto exista; un botón
+           de 44px con ese grosor se volvería una lupa. */
+        const shortSide = Math.min(rect.width, rect.height);
+        const sizeFactor = 1 + 4.4 * Math.min(1, Math.max(0, (shortSide - 40) / 240));
+        const thickness = style.thickness * style.thickScale * sizeFactor * dpr;
         const { flat, body, lit, caustic, iri, blurScale } = style;
 
         const age = (time - lens.impact.time) / 1000;
@@ -633,7 +722,15 @@
 
         gl.uniform4f(this.uniforms.u_rect, rect.left * dpr, rect.top * dpr, rect.width * dpr, rect.height * dpr);
         gl.uniform2f(this.uniforms.u_half, rect.width * dpr * 0.5, rect.height * dpr * 0.5);
-        gl.uniform1f(this.uniforms.u_radius, Math.min(radius, Math.min(rect.width, rect.height) * dpr * 0.5));
+        const maxRadius = Math.min(rect.width, rect.height) * dpr * 0.5;
+        const clamped = Math.min(radius, maxRadius);
+        /* Una píldora o un círculo tienen que seguir siendo circulares: la
+           esquina superelíptica solo tiene sentido donde hay lado recto que
+           empalmar. Si el radio llega a la mitad del lado corto, n = 2. */
+        const exponent = clamped >= maxRadius - 1 ? 2.0 : 4.0;
+        gl.uniform1f(this.uniforms.u_radius, clamped);
+        gl.uniform1f(this.uniforms.u_exp, exponent);
+        gl.uniform1f(this.uniforms.u_profile, style.profile);
         gl.uniform1f(this.uniforms.u_thickness, Math.max(thickness, 1));
         gl.uniform1f(this.uniforms.u_refraction, this.tokens.refraction);
         gl.uniform1f(this.uniforms.u_dispersion, this.tokens.dispersion);
