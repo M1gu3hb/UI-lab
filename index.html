@@ -14,6 +14,11 @@
 <body data-background="aurora">
   <a class="skip-link" href="#workspace">Saltar al laboratorio</a>
 
+  <!-- Grano visible. Va como capa encima del canvas del fondo y NUNCA dentro de
+       la textura que muestrea la lente: si estuviera dentro, la refracción lo
+       magnificaría y volverían los puntitos. -->
+  <div class="grain-layer" aria-hidden="true"></div>
+
   <div class="scene" aria-hidden="true">
     <div class="scene__orb scene__orb--one"></div>
     <div class="scene__orb scene__orb--two"></div>
@@ -350,6 +355,12 @@
   <div id="toastRegion" class="toast-region" role="region" aria-live="polite" aria-label="Notificaciones"></div>
 
   <svg width="0" height="0" aria-hidden="true" focusable="false">
+    <filter id="filmGrain" x="0" y="0" width="100%" height="100%">
+      <!-- numOctaves por encima de 4 no aporta y cuesta; un baseFrequency
+           entero devuelve blanco liso. -->
+      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" stitchTiles="stitch" result="noise" />
+      <feColorMatrix in="noise" type="saturate" values="0" />
+    </filter>
     <filter id="softNoise">
       <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="4" result="noise" />
       <feColorMatrix in="noise" type="saturate" values="0" result="gray" />

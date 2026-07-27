@@ -135,5 +135,50 @@ for (const [label, selector, component] of TARGETS) {
 }
 
 console.log(`\n${failures} control(es) con lensing por debajo del umbral de 8/255 en el interior`);
+
+/* Transmisión: desviación estándar de luminancia dentro del control dividida
+   por la de fuera. Mide cuánta estructura del fondo sobrevive al material, que
+   es exactamente lo que se pierde cuando se apila vidrio sobre vidrio. */
+const transmission = await page.evaluate(async () => {
+  const luminance = data => {
+    let sum = 0, sumSq = 0, n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const y = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      sum += y; sumSq += y * y; n += 1;
+    }
+    const mean = sum / n;
+    return Math.sqrt(Math.max(0, sumSq / n - mean * mean));
+  };
+  const backdrop = document.querySelector('#mqBackdrop');
+  const rows = [];
+  for (const [label, selector] of [
+    ['card 1er nivel', '#componentGallery .ui-card'],
+    ['sidebar anidada', '#componentGallery .sidebar-demo'],
+    ['top nav anidada', '#componentGallery .top-nav-demo'],
+    ['tabs anidadas', '#componentGallery .tabs-demo']
+  ]) {
+    const element = document.querySelector(selector);
+    if (!element) { rows.push([label, null]); continue; }
+    element.scrollIntoView({ block: 'center', behavior: 'instant' });
+    await new Promise(done => setTimeout(done, 240));
+    const canvas = element.querySelector(':scope > canvas.mq-lens');
+    if (!canvas || !canvas.width) { rows.push([label, null]); continue; }
+    const inside = luminance(canvas.getContext('2d', { willReadFrequently: true })
+      .getImageData(0, 0, canvas.width, canvas.height).data);
+    const rect = element.getBoundingClientRect();
+    const sx = backdrop.width / window.innerWidth;
+    const sy = backdrop.height / window.innerHeight;
+    const outside = luminance(backdrop.getContext('2d', { willReadFrequently: true })
+      .getImageData(Math.max(0, Math.round(rect.left * sx)), Math.max(0, Math.round(rect.top * sy)),
+        Math.max(1, Math.round(rect.width * sx)), Math.max(1, Math.round(rect.height * sy))).data);
+    rows.push([label, outside > 0.5 ? inside / outside : null]);
+  }
+  return rows;
+});
+
+console.log('\ntransmisión (desviación dentro / fuera)');
+for (const [label, value] of transmission) {
+  console.log(`  ${label.padEnd(18)} ${value === null ? '  (sin lente)' : (value * 100).toFixed(0).padStart(4) + ' %'}`);
+}
 await browser.close();
 process.exitCode = failures ? 1 : 0;

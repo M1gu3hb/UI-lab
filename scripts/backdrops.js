@@ -41,22 +41,45 @@
     return gradient;
   }
 
-  /** Grano fino: rompe el banding y da a la refracción un detalle de alta frecuencia. */
-  function grain(ctx, width, height, amount = 0.045, seed = 7) {
-    /* Con fillRect por celda esto eran ~1.7M llamadas a 2x DPR y bloqueaba el
-       hilo principal varios segundos: la textura llegaba a la GPU a medio
-       pintar. Una sola pasada de ImageData hace lo mismo en milisegundos. */
+  /** Micro-dither anti-banding. NO es el grano visible: ese va fuera de la textura.
+   *
+   * El ruido blanco no correlacionado píxel a píxel no es grano, es sal y
+   * pimienta: se ve como puntos negros y blancos sueltos. Y estando dentro del
+   * bitmap que muestrea el shader, la lente lo magnifica — cuanto mejor
+   * funciona la refracción, más se notan los puntos.
+   *
+   * Aquí queda solo lo imprescindible para romper el banding de los degradados:
+   * ruido correlacionado en celdas de 3px, interpolado bilinealmente al
+   * escalar, y con una amplitud por debajo del umbral de visibilidad. El grano
+   * que se ve es una capa SVG encima del canvas (#mqGrain), fuera del alcance
+   * de la lente.
+   */
+  function grain(ctx, width, height, amount = 0.012, seed = 7) {
+    const cell = 3;
+    const smallWidth = Math.max(1, Math.ceil(width / cell));
+    const smallHeight = Math.max(1, Math.ceil(height / cell));
+    const small = document.createElement('canvas');
+    small.width = smallWidth;
+    small.height = smallHeight;
+    const smallCtx = small.getContext('2d');
+    const image = smallCtx.createImageData(smallWidth, smallHeight);
     const random = seeded(seed);
-    const image = ctx.getImageData(0, 0, width, height);
-    const data = image.data;
-    const strength = amount * 255;
-    for (let index = 0; index < data.length; index += 4) {
-      const noise = (random() - 0.5) * 2 * strength;
-      data[index] = Math.max(0, Math.min(255, data[index] + noise));
-      data[index + 1] = Math.max(0, Math.min(255, data[index + 1] + noise));
-      data[index + 2] = Math.max(0, Math.min(255, data[index + 2] + noise));
+    const swing = Math.max(1, Math.round(Math.min(amount, 0.02) * 255));
+    for (let index = 0; index < image.data.length; index += 4) {
+      const value = 128 + Math.round((random() - 0.5) * 2 * swing);
+      image.data[index] = value;
+      image.data[index + 1] = value;
+      image.data[index + 2] = value;
+      image.data[index + 3] = 255;
     }
-    ctx.putImageData(image, 0, 0);
+    smallCtx.putImageData(image, 0, 0);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(small, 0, 0, width, height);
+    ctx.restore();
   }
 
   /* ------------------------------------------------------------------ */

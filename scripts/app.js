@@ -972,7 +972,14 @@
      propósito: registrar todo el DOM cuesta fill-rate sin decir nada nuevo
      sobre el material. */
   const LENS_SELECTOR = [
-    '.ui-button', '.ui-card', '.gallery-card', '.switch-control', '.knob',
+    /* .gallery-card NO lleva lente. Apple lo dice literal: "glass cannot sample
+       other glass". La lente muestrea el bitmap del fondo, no lo que hay
+       inmediatamente detrás, así que un elemento anidado dentro de una card de
+       vidrio refractaba el fondo y luego el resultado se componía encima del
+       tinte de la card: dos tintes apilados. Por eso la sidebar y la top nav se
+       veían opacas y una card de primer nivel no.
+       La vitrina deja de ser del material que exhibe. */
+    '.ui-button', '.ui-card', '.switch-control', '.knob',
     /* `.field input` a secas capturaba los dos <input type=range> del range
        slider, que están superpuestos con inset:0: dos lentes apiladas en el
        mismo sitio y una silueta redondeada huérfana debajo del control. Los
@@ -1052,6 +1059,7 @@
       /* Sin WebGL el laboratorio cae al nivel CSS, pero el fondo por canvas se
          queda: es 2D y funciona en todas partes. */
       $('#qualitySelect').value = 'fallback';
+      lensEngine.drawBackdrop();
     }
     liquidRenderer = createRendererAdapter();
     liquidController = new window.LiquidSpringController(liquidRenderer);

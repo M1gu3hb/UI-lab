@@ -64,7 +64,6 @@
 [data-mq-material="liquid-glass"] .mq-surface,
 [data-mq-material="liquid-glass"] .ui-button,
 [data-mq-material="liquid-glass"] .ui-card,
-[data-mq-material="liquid-glass"] .gallery-card,
 [data-mq-material="liquid-glass"] .switch-control,
 [data-mq-material="liquid-glass"] .knob,
 [data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),
@@ -122,8 +121,7 @@
    el shader, con el tinte ya incorporado. */
 html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .ui-button,
 html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .ui-card,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .gallery-card,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .switch-control,
+html[data-mq-lens="on"] html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .switch-control,
 html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .knob,
 html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),
 html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .field textarea,
@@ -434,12 +432,17 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
   --mq-body: rgba(10, 25, 43, 0.46);
 }
 
+/* La galería es chrome del laboratorio, no un material.
+   Siendo vidrio, cada componente de dentro apilaba su tinte sobre el suyo y el
+   resultado leía opaco. Transparente, los componentes se apoyan directamente
+   sobre el fondo y refractan lo que de verdad tienen detrás. */
 [data-mq-material="liquid-glass"] .gallery-card {
-  --mq-radius: 18px;
-  --mq-thick: 2.6px;
-  --mq-body: rgba(6, 16, 30, 0.50);
-  --mq-caustic: 0.34;
-  --mq-blur-scale: 1.35;
+  background: transparent;
+  border: 1px solid rgba(150, 190, 220, 0.16);
+  border-radius: 18px;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* ==========================================================================
@@ -632,8 +635,7 @@ html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .calendar {
   --mq-edge: rgba(70, 110, 140, 0.34);
 }
 
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .gallery-card,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .gallery-card {
+html[data-backdrop-tone="light"]html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .gallery-card {
   --mq-body: rgba(250, 253, 255, 0.68);
   --mq-edge: rgba(70, 110, 140, 0.30);
 }

@@ -80,6 +80,7 @@
     uniform float u_exp;        /* exponente de la superelipse: 2 = círculo, 4 = squircle */
     uniform float u_profile;    /* k del perfil de espesor: 2 = circular, 4 = squircle */
     uniform float u_dome;       /* curvatura de la cúpula sobre toda la superficie, 0–1 */
+    uniform float u_pad;        /* holgura del quad, en px: acota el soporte de la cáustica */
 
     /* ------------------------------------------------------------------
        Campo de la silueta: esquina superelíptica con gradiente analítico.
@@ -286,11 +287,22 @@
          vende el grosor mejor que cualquier highlight. */
       float outside = max(sd, 0.0);
       float away = clamp(dot(normalize(p + vec2(0.0001)), -lightDirection), 0.0, 1.0);
-      float pool = exp(-outside / (9.0 + thickness * 3.2));
-      float caustic = pool * u_caustic * (0.22 + away * 0.78) * 0.55;
+      /* Cáustica: un charco concentrado, y con soporte acotado.
+         Antes la longitud de decaimiento era 9 + espesor*3.2 — para una card de
+         34px de canto, 118px — mientras el quad se acababa a 34px fijos. La
+         cáustica se cortaba al 75% de su pico, de golpe, siguiendo el rectángulo
+         del quad: ese era el recuadro sucio alrededor de la top nav y la
+         sidebar. Un efecto que no cabe en su lienzo no se recorta, se reescala.
+         Ahora la longitud sale del propio espesor pero con tope, el quad se
+         dimensiona a partir de ella (u_pad), y una ventana C² la lleva
+         exactamente a cero en el borde del quad. */
+      float reachOut = min(6.0 + thickness * 1.15, u_pad * 0.62);
+      float pool = exp(-outside / max(reachOut, 1.0));
+      float window = 1.0 - smootherstep(u_pad * 0.55, u_pad * 0.98, outside);
+      float caustic = pool * window * u_caustic * (0.22 + away * 0.78) * 0.55;
       /* Sombra de contacto: corta, dura y pegada al borde. Es lo que apoya el
          objeto en la página en vez de dejarlo flotando. */
-      float contact = exp(-outside / 2.6) * 0.30;
+      float contact = exp(-outside / 2.6) * 0.30 * window;
 
       float alpha = 1.0 - smootherstep(-1.0, 1.0, sd);
       float outerAlpha = (1.0 - alpha) * clamp(caustic + contact, 0.0, 1.0);
@@ -483,6 +495,7 @@
 
     mount(container = document.body) {
       if (!this.backdrop.isConnected) container.prepend(this.backdrop);
+      this.backdropDirty = true;
       /* Va después del fondo y antes del contenido: z-index -1 contra el -2 del
          fondo. Aquí se ven la cáustica y la sombra de contacto de todas las
          lentes sin que ningún canvas invada la caja de su vecino. */
@@ -766,10 +779,12 @@
 
     frame(time) {
       this.running = false;
-      if (!this.enabled || !this.gl) return;
-
+      /* El fondo se dibuja aunque no haya WebGL: es 2D y es justo lo que
+         sostiene el nivel fallback. Antes un fallo del shader dejaba también la
+         página sin fondo, que es un modo de fallo mucho peor que el original. */
       this.readTokens();
       this.drawBackdrop();
+      if (!this.enabled || !this.gl) return;
 
       /* Fase de lectura: todos los rects y tokens de una vez. Ninguna escritura
          puede colarse aquí o el navegador recalcula layout N veces por frame. */
@@ -909,7 +924,7 @@
       gl.clear(gl.COLOR_BUFFER_BIT);
 
       const dpr = this.scale;
-      const pad = Math.round(34 * dpr);
+
 
       const applyShared = () => {
         gl.uniform2f(this.uniforms.u_viewport, this.glCanvas.width, this.glCanvas.height);
@@ -919,7 +934,6 @@
         gl.uniform1i(this.uniforms.u_blurred, 1);
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, this.blurTexture);
-        gl.uniform1f(this.uniforms.u_pad, pad);
         gl.uniform1f(this.uniforms.u_lightAngle, this.tokens.lightAngle);
         gl.uniform1f(this.uniforms.u_lightIntensity, this.tokens.lightIntensity);
       };
@@ -967,6 +981,11 @@
         const geometric = Math.min(34, Math.max(style.thickness, shortSide * 0.20));
         const thickness = geometric * style.thickScale * dpr;
         lens.lastBevelCss = Number((thickness / dpr).toFixed(1));
+        /* El quad se dimensiona a partir del alcance del efecto exterior, no al
+           revés. 1.9x el alcance deja el residuo por debajo del 1%, y la
+           ventana del shader lo lleva a cero exacto. */
+        const pad = Math.ceil(Math.min(6 + thickness * 1.15, 58 * dpr) * 1.9);
+        gl.uniform1f(this.uniforms.u_pad, pad);
         const { flat, body, lit, caustic, iri, blurScale } = style;
 
         const age = (time - lens.impact.time) / 1000;
