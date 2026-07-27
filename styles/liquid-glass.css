@@ -1,525 +1,602 @@
+/* ==========================================================================
+   Liquid Glass — receta de material
+   ==========================================================================
+
+   Qué separa este material de `glass`: la misma óptica, pero viva. `glass` es
+   una lámina rígida y pulida; esto es vidrio con espesor que se comporta como
+   líquido bajo presión. No es una capa de agua encima de un botón — lo que
+   separa vidrio de agua es el índice de refracción alto, el canto sólido y el
+   specular duro y compacto. El agua difumina; el vidrio dobla y corta.
+
+   Dónde vive cada cosa:
+   - El espesor, la refracción de borde, el specular direccional, la dispersión
+     del canto y la cáustica los calcula scripts/lens-engine.js sobre la textura
+     real del fondo. Aquí se declaran los tokens que lo alimentan.
+   - Este archivo sostiene por sí solo los niveles balanced y fallback: sin
+     WebGL el material sigue siendo vidrio con canto, no una versión rota.
+
+   Auto-contención: cero :root, cada var() con fallback literal. Pegar el bloque
+   de un componente en un HTML vacío reproduce el material.
+
+   El selector raíz es [data-mq-material="liquid-glass"], y ese atributo puede
+   estar en <html> (vista Laboratorio) o en una tarjeta de Compare. Un único
+   juego de reglas sirve a las dos vistas: por eso Compare muestra el material
+   completo y no un subconjunto mantenido a mano.
+   ========================================================================== */
+
+[data-mq-material="liquid-glass"] {
+  /* ---- Contrato --mq-*: lo que se congela al inyectar en Morphiq UI ------ */
+  /* El alfa alto no es un descuido: es el gate.
+     Con alfa .30 el material se veía precioso sobre fondo oscuro y caía a
+     1.49:1 sobre blanco — el vidrio le estaba pidiendo prestada la legibilidad
+     al fondo. Lo que hace que esto lea como vidrio no es lo transparente que
+     sea el cuerpo, es el canto: por eso el tinte sube y --mq-thick sube con él. */
+  --mq-body: rgba(12, 29, 50, 0.76);   /* cuerpo del vidrio: color + cuánto tiñe */
+  --mq-lit: #cfeeff;                   /* highlight del canto orientado a la luz */
+  --mq-edge: rgba(3, 12, 26, 0.62);    /* canto inferior y profundidad al presionar */
+  --mq-text: #f2fbff;
+  --mq-brd: rgba(196, 232, 255, 0.44);
+  --mq-ring: rgba(120, 224, 255, 0.85);
+
+  /* ---- Tokens propios del material -------------------------------------- */
+  --mq-thick: 3.4px;        /* grosor del canto, 1.5–7px. Bajo 2 deja de leer como vidrio */
+  --mq-iri: 0.16;           /* irisación del canto, 0–0.4. Sobre 0.25 se vuelve jabón */
+  --mq-caustic: 0.62;       /* charco de luz proyectado bajo el cuerpo, 0–1 */
+  --mq-flat: 0;             /* 0 = líquido deformable · 1 = lámina rígida */
+  --mq-blur-scale: 0.55;    /* el vidrio dobla más de lo que difumina */
+  --mq-radius: 18px;
+
+  color: var(--mq-text, #f2fbff);
+}
+
+/* ==========================================================================
+   Superficie base
+   ========================================================================== */
+
+[data-mq-material="liquid-glass"] .mq-surface,
+[data-mq-material="liquid-glass"] .ui-button,
+[data-mq-material="liquid-glass"] .ui-card,
+[data-mq-material="liquid-glass"] .gallery-card,
+[data-mq-material="liquid-glass"] .switch-control,
+[data-mq-material="liquid-glass"] .knob,
+[data-mq-material="liquid-glass"] .field input,
+[data-mq-material="liquid-glass"] .field textarea,
+[data-mq-material="liquid-glass"] .field select,
+[data-mq-material="liquid-glass"] .top-nav-demo,
+[data-mq-material="liquid-glass"] .sidebar-demo,
+[data-mq-material="liquid-glass"] .tabs-demo,
+[data-mq-material="liquid-glass"] .floating-dock,
+[data-mq-material="liquid-glass"] .segmented-control,
+[data-mq-material="liquid-glass"] .music-player,
+[data-mq-material="liquid-glass"] .weather-widget,
+[data-mq-material="liquid-glass"] .calendar,
+[data-mq-material="liquid-glass"] .dropdown-menu,
+[data-mq-material="liquid-glass"] .tooltip-bubble,
+[data-mq-material="liquid-glass"] .alert,
+[data-mq-material="liquid-glass"] .notification-item,
+[data-mq-material="liquid-glass"] .system-toast,
+[data-mq-material="liquid-glass"] .task-item,
+[data-mq-material="liquid-glass"] .drop-zone,
+[data-mq-material="liquid-glass"] .demo-modal {
+  position: relative;
+  /* El canvas de la lente es un hijo con z-index negativo. Sin este contexto
+     de apilamiento se escaparía por debajo del ancestro y sangraría sobre el
+     contenido de otros controles — que es exactamente el halo borroso que
+     arrastraba el texto de los inputs. */
+  isolation: isolate;
+  border: 1px solid var(--mq-brd, rgba(196, 232, 255, 0.44));
+  border-radius: var(--mq-radius, 18px);
+  color: var(--mq-text, #f2fbff);
+  background: var(--mq-body, rgba(12, 29, 50, 0.76));
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.22) inset,
+    0 -1px 0 0 var(--mq-edge, rgba(3, 12, 26, 0.62)) inset,
+    0 12px 30px -12px rgba(2, 10, 24, 0.72);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+/* El canvas de la lente. Nunca lleva filter ni mix-blend-mode: todo el
+   desenfoque ocurre dentro del shader, sobre la textura del fondo. Es lo que
+   garantiza que nada sangre sobre el contenido. */
+.mq-lens {
+  position: absolute;
+  z-index: -1;
+  display: block;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* Con el motor activo el color de fondo estorba: el cuerpo del vidrio lo pinta
+   el shader, con el tinte ya incorporado. */
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .ui-button,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .ui-card,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .gallery-card,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .switch-control,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .knob,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .field input,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .field textarea,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .field select,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .top-nav-demo,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .sidebar-demo,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .tabs-demo,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .floating-dock,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .segmented-control,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .music-player,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .weather-widget,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .calendar,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .dropdown-menu,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .tooltip-bubble,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .system-toast,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .alert,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .notification-item,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .task-item,
+html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .demo-modal {
+  background: transparent;
+}
+
+/* ==========================================================================
+   Niveles balanced y fallback — el material sin WebGL
+   ==========================================================================
+   Aquí no hay refracción real, así que el canto se construye con gradientes.
+   Sigue habiendo espesor, luz direccional y bisel: un vidrio defendible por sí
+   solo, no una versión degradada. Es lo que ve la mitad de los usuarios de
+   Safari. */
+
+html:not([data-mq-lens="on"]) [data-mq-material="liquid-glass"] .ui-button::after,
+html:not([data-mq-lens="on"]) [data-mq-material="liquid-glass"] .ui-card::after,
+html:not([data-mq-lens="on"]) [data-mq-material="liquid-glass"] .floating-dock::after,
+html:not([data-mq-lens="on"]) [data-mq-material="liquid-glass"] .switch-control::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  /* Canto: claro en el lado que mira a la luz, frío y saturado en el opuesto.
+     El ancho del gradiente es el grosor del vidrio. */
+  background:
+    linear-gradient(var(--light-angle, 315deg),
+      rgba(255, 255, 255, 0.62) 0,
+      rgba(255, 255, 255, 0.06) calc(var(--mq-thick, 3.4px) * 1.6),
+      transparent calc(var(--mq-thick, 3.4px) * 3.4)),
+    linear-gradient(calc(var(--light-angle, 315deg) + 180deg),
+      rgba(150, 220, 255, 0.34) 0,
+      transparent calc(var(--mq-thick, 3.4px) * 2.6));
+}
+
+html[data-quality="fallback"] [data-mq-material="liquid-glass"] .ui-button,
+html[data-quality="fallback"] [data-mq-material="liquid-glass"] .ui-card,
+html[data-quality="fallback"] [data-mq-material="liquid-glass"] .gallery-card {
+  backdrop-filter: blur(10px) saturate(150%) brightness(1.04);
+  -webkit-backdrop-filter: blur(10px) saturate(150%) brightness(1.04);
+}
+
+html[data-quality="balanced"] [data-mq-material="liquid-glass"] .ui-button,
+html[data-quality="balanced"] [data-mq-material="liquid-glass"] .ui-card,
+html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
+  backdrop-filter: blur(7px) saturate(165%) contrast(1.06);
+  -webkit-backdrop-filter: blur(7px) saturate(165%) contrast(1.06);
+}
+
+/* ==========================================================================
+   Botones — el material tiene que existir donde más se mira
+   ==========================================================================
+   El primario ya no es un relleno cian sólido. Un botón de vidrio es vidrio:
+   entre variantes cambia el tinte del cuerpo y el grosor del canto, no si el
+   material aparece o no. */
+
+[data-mq-material="liquid-glass"] .ui-button {
+  --mq-radius: 14px;
+  --mq-thick: 3.2px;
+  min-height: 44px;
+  padding: 11px 18px;
+  font-weight: 680;
+  letter-spacing: -0.01em;
+  text-shadow: 0 1px 2px rgba(2, 10, 24, 0.55);
+  transform: translate3d(var(--liquid-x, 0px), var(--liquid-y, 0px), 0)
+             scaleX(var(--liquid-scale-x, 1))
+             scaleY(var(--liquid-scale-y, 1));
+  transform-origin: var(--px, 50%) var(--py, 50%);
+}
+
+[data-mq-material="liquid-glass"] .ui-button--primary {
+  --mq-body: rgba(20, 74, 112, 0.80);
+  --mq-thick: 5.0px;
+  --mq-iri: 0.22;
+  --mq-brd: rgba(214, 244, 255, 0.68);
+  --mq-lit: #eafaff;
+  color: #f6fdff;
+}
+
+[data-mq-material="liquid-glass"] .ui-button--secondary {
+  --mq-body: rgba(12, 30, 52, 0.80);
+  --mq-thick: 3.6px;
+}
+
+[data-mq-material="liquid-glass"] .ui-button--tertiary {
+  --mq-body: rgba(12, 30, 52, 0.66);
+  --mq-thick: 2.6px;
+  --mq-brd: rgba(196, 232, 255, 0.22);
+  background: var(--mq-body, rgba(12, 30, 52, 0.66));
+  box-shadow: none;
+}
+
+[data-mq-material="liquid-glass"] .ui-button--danger {
+  --mq-body: rgba(122, 22, 44, 0.80);
+  --mq-lit: #ffd9de;
+  --mq-brd: rgba(255, 190, 200, 0.62);
+  --mq-ring: rgba(255, 140, 158, 0.9);
+  color: #fff2f4;
+}
+
+[data-mq-material="liquid-glass"] .ui-icon-button,
+[data-mq-material="liquid-glass"] .ui-fab,
+[data-mq-material="liquid-glass"] .quick-actions button,
+[data-mq-material="liquid-glass"] .player-controls button {
+  --mq-radius: 50%;
+  --mq-thick: 3.6px;
+  position: relative;
+  isolation: isolate;
+  border: 1px solid var(--mq-brd, rgba(196, 232, 255, 0.44));
+  background: var(--mq-body, rgba(12, 29, 50, 0.76));
+  color: var(--mq-text, #f2fbff);
+}
+
+[data-mq-material="liquid-glass"] .button-group .ui-button {
+  --mq-radius: 10px;
+}
+
+/* ==========================================================================
+   Estados — la presión es deformación del material, no un halo
+   ========================================================================== */
+
+[data-mq-material="liquid-glass"] .ui-button:hover,
+[data-mq-material="liquid-glass"] .ui-icon-button:hover,
+[data-mq-material="liquid-glass"] .ui-fab:hover {
+  --mq-thick: 4.4px;
+  --mq-lit: #ffffff;
+  border-color: color-mix(in srgb, var(--mq-brd, rgba(196, 232, 255, 0.44)) 70%, white);
+}
+
+[data-mq-material="liquid-glass"] .ui-button:active,
+[data-mq-material="liquid-glass"] .is-liquid-pressed,
+[data-mq-material="liquid-glass"] .is-pressed {
+  /* Al presionar, más vidrio en el camino óptico: el canto se ensancha y la
+     distorsión sube. La caída de la sombra es el recorrido físico. */
+  --mq-thick: 5.6px;
+  --mq-caustic: 0.28;
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.10) inset,
+    0 -2px 0 0 var(--mq-edge, rgba(3, 12, 26, 0.62)) inset,
+    0 4px 12px -8px rgba(2, 10, 24, 0.8);
+}
+
+[data-mq-material="liquid-glass"] .ui-button:focus-visible,
+[data-mq-material="liquid-glass"] .switch-control:focus-visible,
+[data-mq-material="liquid-glass"] .custom-slider:focus-visible,
+[data-mq-material="liquid-glass"] .knob:focus-visible,
+[data-mq-material="liquid-glass"] .field input:focus-visible,
+[data-mq-material="liquid-glass"] .field textarea:focus-visible,
+[data-mq-material="liquid-glass"] .field select:focus-visible,
+[data-mq-material="liquid-glass"] [data-focus="true"] {
+  outline: 2px solid var(--mq-ring, rgba(120, 224, 255, 0.85));
+  outline-offset: 2px;
+  --mq-lit: #ffffff;
+}
+
+[data-mq-material="liquid-glass"] .ui-button:disabled,
+[data-mq-material="liquid-glass"] [aria-disabled="true"] {
+  /* El disabled baja el espesor, no solo la opacidad: es menos vidrio, no
+     vidrio a medio pintar. El texto conserva contraste suficiente. */
+  --mq-body: rgba(28, 42, 58, 0.82);
+  --mq-thick: 1.6px;
+  --mq-iri: 0;
+  --mq-caustic: 0;
+  --mq-brd: rgba(170, 195, 214, 0.20);
+  color: rgba(226, 240, 250, 0.82);
+  opacity: 1;
+  box-shadow: none;
+}
+
+/* ==========================================================================
+   Controles
+   ========================================================================== */
+
+[data-mq-material="liquid-glass"] .switch-control {
+  --mq-radius: 999px;
+  --mq-thick: 3.0px;
+  --mq-body: rgba(9, 22, 40, 0.76);
+}
+[data-mq-material="liquid-glass"] .switch-control[aria-checked="true"] {
+  --mq-body: rgba(22, 80, 120, 0.80);
+  --mq-iri: 0.24;
+}
+[data-mq-material="liquid-glass"] .switch-thumb {
+  background: linear-gradient(180deg, #ffffff, #cfe9f7);
+  box-shadow: 0 3px 8px rgba(2, 10, 24, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.4) inset;
+}
+
+[data-mq-material="liquid-glass"] .slider-track {
+  border-radius: 999px;
+  background: rgba(8, 22, 38, 0.5);
+  box-shadow: 0 1px 3px rgba(2, 10, 24, 0.7) inset, 0 -1px 0 rgba(255, 255, 255, 0.16) inset;
+  height: 10px;
+}
+[data-mq-material="liquid-glass"] .slider-fill {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--mq-lit, #cfeeff) 40%, transparent),
+    var(--mq-lit, #cfeeff));
+  box-shadow: 0 0 12px -2px var(--mq-ring, rgba(120, 224, 255, 0.85));
+}
+[data-mq-material="liquid-glass"] .slider-thumb {
+  background: radial-gradient(circle at 34% 28%, #ffffff, #b9dcf0 62%, #7fb4cf);
+  box-shadow: 0 4px 10px rgba(2, 10, 24, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+}
+
+[data-mq-material="liquid-glass"] .knob {
+  --mq-radius: 50%;
+  --mq-thick: 5.0px;
+  --mq-iri: 0.26;
+  --mq-body: rgba(11, 28, 48, 0.74);
+}
+
+[data-mq-material="liquid-glass"] .progress-track {
+  border-radius: 999px;
+  background: rgba(8, 22, 38, 0.5);
+  box-shadow: 0 1px 3px rgba(2, 10, 24, 0.7) inset;
+}
+[data-mq-material="liquid-glass"] .progress-fill {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--mq-lit, #cfeeff) 34%, transparent),
+    var(--mq-lit, #cfeeff));
+}
+
+/* Hueco / inset: los campos son la cara interior del vidrio, no la exterior.
+   La luz entra por el borde opuesto al de las superficies elevadas. */
+[data-mq-material="liquid-glass"] .field input,
+[data-mq-material="liquid-glass"] .field textarea,
+[data-mq-material="liquid-glass"] .field select {
+  --mq-radius: 12px;
+  --mq-thick: 2.6px;
+  --mq-body: rgba(5, 16, 31, 0.82);
+  padding: 11px 13px;
+  box-shadow:
+    0 2px 6px -2px rgba(2, 10, 24, 0.9) inset,
+    0 -1px 0 0 rgba(255, 255, 255, 0.16) inset;
+}
+[data-mq-material="liquid-glass"] .field input::placeholder,
+[data-mq-material="liquid-glass"] .field textarea::placeholder {
+  color: rgba(206, 228, 244, 0.6);
+}
+
+/* ==========================================================================
+   Superficies y barras
+   ========================================================================== */
+
+[data-mq-material="liquid-glass"] .ui-card,
+[data-mq-material="liquid-glass"] .demo-modal,
+[data-mq-material="liquid-glass"] .music-player,
+[data-mq-material="liquid-glass"] .weather-widget,
+[data-mq-material="liquid-glass"] .calendar {
+  --mq-radius: 20px;
+  --mq-thick: 4.6px;
+  --mq-body: rgba(10, 25, 43, 0.78);
+  --mq-caustic: 0.5;
+}
+
+[data-mq-material="liquid-glass"] .top-nav-demo,
+[data-mq-material="liquid-glass"] .sidebar-demo,
+[data-mq-material="liquid-glass"] .tabs-demo,
+[data-mq-material="liquid-glass"] .floating-dock,
+[data-mq-material="liquid-glass"] .segmented-control {
+  --mq-radius: 16px;
+  --mq-thick: 3.8px;
+  --mq-body: rgba(9, 23, 41, 0.76);
+  --mq-caustic: 0.72;
+}
+[data-mq-material="liquid-glass"] .floating-dock {
+  --mq-radius: 22px;
+}
+
+/* Los overlays flotan sobre contenido, no sobre el fondo: necesitan más cuerpo
+   o el texto de debajo se lee a través. */
+[data-mq-material="liquid-glass"] .dropdown-menu,
+[data-mq-material="liquid-glass"] .tooltip-bubble,
+[data-mq-material="liquid-glass"] .system-toast,
+[data-mq-material="liquid-glass"] .demo-modal {
+  --mq-body: rgba(8, 20, 37, 0.86);
+  --mq-thick: 3.2px;
+  --mq-blur-scale: 1.5;
+}
+
+[data-mq-material="liquid-glass"] .alert,
+[data-mq-material="liquid-glass"] .notification-item,
+[data-mq-material="liquid-glass"] .task-item {
+  --mq-radius: 12px;
+  --mq-thick: 2.4px;
+  --mq-body: rgba(10, 25, 43, 0.76);
+}
+
+[data-mq-material="liquid-glass"] .gallery-card {
+  --mq-radius: 18px;
+  --mq-thick: 2.6px;
+  --mq-body: rgba(6, 16, 30, 0.80);
+  --mq-caustic: 0.34;
+  --mq-blur-scale: 1.35;
+}
+
+/* ==========================================================================
+   Texto sobre el material
+   ==========================================================================
+   El arquetipo que más se olvida. Un material puede verse increíble en un
+   botón de 44px y volver ilegible un párrafo de 14px encima. */
+
+[data-mq-material="liquid-glass"] .ui-card h5,
+[data-mq-material="liquid-glass"] .ui-card strong,
+[data-mq-material="liquid-glass"] .gallery-card h4,
+[data-mq-material="liquid-glass"] .breadcrumbs,
+[data-mq-material="liquid-glass"] .step-indicator span {
+  color: var(--mq-text, #f2fbff);
+  text-shadow: 0 1px 3px rgba(2, 10, 24, 0.7);
+}
+[data-mq-material="liquid-glass"] .ui-card p,
+[data-mq-material="liquid-glass"] .gallery-card p,
+[data-mq-material="liquid-glass"] .weather-days,
+[data-mq-material="liquid-glass"] .player-meta small {
+  /* Deliberadamente más claro que el --muted global: sobre vidrio, el gris
+     medio del laboratorio cae por debajo de 4.5:1. */
+  color: rgba(228, 244, 255, 0.97);
+  text-shadow: 0 1px 2px rgba(2, 10, 24, 0.6);
+}
+
+/* ==========================================================================
+   Chrome del laboratorio para este material (no forma parte de la receta)
+   ========================================================================== */
+
 html[data-style="liquid-glass"] {
-  --material-bg: rgba(22, 42, 66, calc(var(--material-opacity) * .72));
-  --material-border: rgba(255,255,255,calc(var(--border-alpha) + .08));
-  --material-highlight: rgba(255,255,255,.72);
-  --material-shadow: rgba(0,5,18,.36);
-  --material-radius: 22px;
-  --material-texture: .02;
   --page-fg: #f4fbff;
-  --muted: #bdd0dc;
-  --panel-bg: rgba(5, 16, 28, .34);
-  --panel-border: rgba(255,255,255,.16);
-  --shadow-app: 0 24px 70px rgba(0,5,18,.32);
+  --muted: #c3d7e3;
+  --panel-bg: rgba(5, 16, 28, 0.42);
+  --panel-border: rgba(255, 255, 255, 0.16);
 }
 
 .stage-liquid-glass {
-  background:
-    radial-gradient(circle at 20% 24%, rgba(var(--accent-rgb),.11), transparent 28%),
-    radial-gradient(circle at 82% 68%, rgba(150,78,255,.12), transparent 30%),
-    rgba(2,10,20,.12);
-}
-.stage-liquid-glass::before {
-  content:"";
-  position:absolute;
-  inset:-25%;
-  background:
-    radial-gradient(circle at 35% 45%, rgba(var(--accent-rgb),calc(.12 + var(--material-refraction) * .16)), transparent 22%),
-    radial-gradient(circle at 65% 40%, rgba(156,80,255,calc(.10 + var(--material-dispersion) * .30)), transparent 24%);
-  filter: blur(calc(16px + var(--material-blur) * .25));
-  pointer-events:none;
-}
-
-.liquid-elastic,
-.liquid-reactive {
-  --px: 50%;
-  --py: 40%;
-  --press: 0;
-  --liquid-x: 0px;
-  --liquid-y: 0px;
-  --liquid-scale-x: 1;
-  --liquid-scale-y: 1;
-  --liquid-tilt-x: 0deg;
-  --liquid-tilt-y: 0deg;
-  --liquid-pressure: 0;
-  --liquid-proximity: 0;
-  --liquid-velocity: 0;
-  --liquid-impact: 0;
   position: relative;
-  transform:
-    perspective(900px)
-    translate3d(var(--liquid-x), var(--liquid-y), 0)
-    rotateX(var(--liquid-tilt-x))
-    rotateY(var(--liquid-tilt-y))
-    scaleX(var(--liquid-scale-x))
-    scaleY(var(--liquid-scale-y));
-  transform-origin: var(--px) var(--py);
-  transform-style: preserve-3d;
-  will-change: transform, box-shadow, border-radius;
-  -webkit-tap-highlight-color: transparent;
-}
-.liquid-elastic { touch-action: none; }
-.liquid-reactive { isolation: isolate; }
-
-.liquid-surface,
-html[data-style="liquid-glass"] .gallery-card,
-html[data-style="liquid-glass"] .state-demo > :last-child,
-html[data-style="liquid-glass"] .top-nav-demo,
-html[data-style="liquid-glass"] .sidebar-demo,
-html[data-style="liquid-glass"] .tabs-demo,
-html[data-style="liquid-glass"] .floating-dock,
-html[data-style="liquid-glass"] .ui-card,
-html[data-style="liquid-glass"] .music-player,
-html[data-style="liquid-glass"] .weather-widget,
-html[data-style="liquid-glass"] .calendar,
-html[data-style="liquid-glass"] .dropdown-menu,
-html[data-style="liquid-glass"] .tooltip-bubble,
-html[data-style="liquid-glass"] .alert,
-html[data-style="liquid-glass"] .notification-item,
-html[data-style="liquid-glass"] .toast-demo,
-html[data-style="liquid-glass"] .task-item {
-  color: #f7fcff;
-  background:
-    radial-gradient(
-      circle at var(--px) var(--py),
-      rgba(255,255,255,calc((.16 + var(--liquid-proximity) * .22 + var(--liquid-pressure) * .18) * var(--material-specular))) 0 3%,
-      rgba(255,255,255,calc(.035 + var(--liquid-proximity) * .07)) 15%,
-      transparent 34%
-    ),
-    radial-gradient(
-      ellipse at var(--px) var(--py),
-      rgba(var(--accent-rgb),calc(var(--material-refraction) * (.08 + var(--liquid-impact) * .14))) 0,
-      transparent 58%
-    ),
-    linear-gradient(
-      calc(var(--light-angle) + 90deg),
-      rgba(255,255,255,calc(.10 + var(--material-specular) * .13)),
-      rgba(255,255,255,.018) 43%,
-      rgba(var(--accent-rgb),calc(.035 + var(--material-dispersion) * .25))
-    ),
-    rgba(7, 23, 40, calc(var(--material-opacity) * .72));
-  border: 1px solid rgba(255,255,255,calc(var(--border-alpha) + .10 + var(--liquid-proximity) * .12));
-  border-radius:
-    calc(var(--material-radius) + var(--liquid-pressure) * 7px)
-    calc(var(--material-radius) + var(--liquid-proximity) * 4px)
-    calc(var(--material-radius) + var(--liquid-pressure) * 5px)
-    calc(var(--material-radius) + var(--liquid-proximity) * 3px);
-  box-shadow:
-    0 calc(var(--material-depth) * (.62 + var(--liquid-proximity) * .18)) calc(var(--material-depth) * (1.85 + var(--liquid-proximity) * .45)) rgba(0,5,18,calc(.29 + var(--liquid-pressure) * .12)),
-    inset 0 1px rgba(255,255,255,calc(.30 + var(--material-specular) * .24)),
-    inset 0 -1px rgba(var(--accent-rgb),calc(.10 + var(--material-refraction) * .18)),
-    0 0 calc(8px + var(--liquid-proximity) * 22px) rgba(var(--accent-rgb),calc(var(--liquid-proximity) * .11)),
-    0 0 0 1px rgba(255,40,156,calc(var(--material-dispersion) * .10));
-  backdrop-filter:
-    blur(calc(var(--material-blur) * (.58 + var(--material-refraction) * .28)))
-    saturate(calc(130% + var(--material-refraction) * 45%))
-    contrast(calc(102% + var(--material-specular) * 9%));
-  -webkit-backdrop-filter:
-    blur(calc(var(--material-blur) * (.58 + var(--material-refraction) * .28)))
-    saturate(calc(130% + var(--material-refraction) * 45%))
-    contrast(calc(102% + var(--material-specular) * 9%));
+  overflow: hidden;
+  border-radius: 18px;
+  background: rgba(4, 12, 24, 0.18);
 }
 
-.liquid-surface::before,
-html[data-style="liquid-glass"] .gallery-card::before,
-html[data-style="liquid-glass"] .ui-card::before,
-html[data-style="liquid-glass"] .music-player::before,
-html[data-style="liquid-glass"] .weather-widget::before,
-html[data-style="liquid-glass"] .calendar::before,
-html[data-style="liquid-glass"] .floating-dock::before,
-html[data-style="liquid-glass"] .top-nav-demo::before,
-html[data-style="liquid-glass"] .tabs-demo::before,
-html[data-style="liquid-glass"] .sidebar-demo::before {
-  content:"";
-  position:absolute;
-  inset:1px;
-  border-radius:inherit;
-  z-index:-1;
-  pointer-events:none;
-  background:
-    linear-gradient(
-      90deg,
-      rgba(255,0,132,calc(var(--material-dispersion) * (.18 + var(--liquid-pressure) * .28))),
-      transparent 10% 90%,
-      rgba(0,210,255,calc(var(--material-dispersion) * (.18 + var(--liquid-pressure) * .28)))
-    ),
-    radial-gradient(
-      circle at var(--px) var(--py),
-      transparent 0 14%,
-      rgba(255,255,255,calc(.035 + var(--liquid-pressure) * .13)) 31%,
-      transparent 62%
-    ),
-    linear-gradient(180deg, rgba(255,255,255,.22), transparent 36%);
-  mix-blend-mode: screen;
-  opacity: calc(.38 + var(--liquid-proximity) * .34 + var(--liquid-pressure) * .22);
-  filter: blur(calc(var(--material-roughness) * 1.8px));
+/* ==========================================================================
+   Accesibilidad
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  /* Sin transformaciones continuas, sin ondas, sin spring. El material sigue
+     siendo reconocible en estático: si solo funcionara en movimiento sería un
+     truco, no un material. El canto, el bisel y la cáustica se quedan. */
+  [data-mq-material="liquid-glass"] .ui-button,
+  [data-mq-material="liquid-glass"] .switch-control,
+  [data-mq-material="liquid-glass"] .knob,
+  [data-mq-material="liquid-glass"] .ui-card {
+    transform: none;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
 }
 
-.liquid-surface::after,
-html[data-style="liquid-glass"] .gallery-card::after,
-html[data-style="liquid-glass"] .ui-card::after,
-html[data-style="liquid-glass"] .music-player::after,
-html[data-style="liquid-glass"] .weather-widget::after,
-html[data-style="liquid-glass"] .calendar::after {
-  content:"";
-  position:absolute;
-  inset:0;
-  z-index:-1;
-  border-radius:inherit;
-  pointer-events:none;
-  opacity: calc(.035 + var(--material-roughness) * .16);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.42' numOctaves='2' seed='9'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.36'/%3E%3C/svg%3E");
-  mix-blend-mode: soft-light;
+@media (forced-colors: active) {
+  /* Aquí desaparecen backdrop-filter, sombras y el canvas. Sin un borde real,
+     el control pierde sus límites. */
+  [data-mq-material="liquid-glass"] .ui-button,
+  [data-mq-material="liquid-glass"] .ui-card,
+  [data-mq-material="liquid-glass"] .switch-control,
+  [data-mq-material="liquid-glass"] .field input,
+  [data-mq-material="liquid-glass"] .field textarea,
+  [data-mq-material="liquid-glass"] .field select,
+  [data-mq-material="liquid-glass"] .floating-dock,
+  [data-mq-material="liquid-glass"] .top-nav-demo,
+  [data-mq-material="liquid-glass"] .gallery-card {
+    border: 2px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  [data-mq-material="liquid-glass"] .mq-lens { display: none; }
+  [data-mq-material="liquid-glass"] .ui-button:focus-visible,
+  [data-mq-material="liquid-glass"] [data-focus="true"] {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+  }
 }
 
-html[data-style="liquid-glass"] .gallery-card,
-html[data-style="liquid-glass"] .ui-card,
-html[data-style="liquid-glass"] .music-player,
-html[data-style="liquid-glass"] .weather-widget,
-html[data-style="liquid-glass"] .calendar,
-html[data-style="liquid-glass"] .notification-item,
-html[data-style="liquid-glass"] .alert,
-html[data-style="liquid-glass"] .task-item {
-  overflow: clip;
-}
-html[data-style="liquid-glass"] .gallery-card:has(.dropdown-menu.is-open) { overflow: visible; }
+/* ==========================================================================
+   Receta consciente del tono
+   ==========================================================================
+   Aquí hay una tensión real y conviene dejarla escrita.
 
-.liquid-wave {
-  position:absolute;
-  left:50%;
-  top:50%;
-  z-index:5;
-  width:var(--wave-size,40px);
-  height:var(--wave-size,40px);
-  border-radius:50%;
-  pointer-events:none;
-  transform:translate(-50%,-50%) scale(.18);
-  opacity:calc((.10 + var(--wave-brightness,.20) * .24) * var(--wave-strength,.5));
-  background:transparent;
-  border:1px solid rgba(255,255,255,calc(.035 + var(--wave-brightness,.20) * .16));
-  box-shadow:
-    inset 0 -1px 0 rgba(0,10,24,calc(.10 + var(--wave-strength,.5) * .10)),
-    inset 0 1px 0 rgba(255,255,255,calc(.025 + var(--wave-brightness,.20) * .10));
-  mix-blend-mode:soft-light;
-  filter:none;
-  animation:liquid-wave-expand var(--wave-duration,760ms) cubic-bezier(.10,.70,.16,1) forwards;
-  animation-delay:var(--wave-delay,0ms);
-}
-.liquid-wave::before,
-.liquid-wave::after {
-  content:"";
-  position:absolute;
-  inset:-2px;
-  border-radius:50%;
-  pointer-events:none;
-}
-.liquid-wave::before {
-  border-top:1px solid rgba(255,255,255,calc(.035 + var(--wave-brightness,.20) * .15));
-  border-left:1px solid rgba(255,255,255,calc(.015 + var(--wave-brightness,.20) * .06));
-  transform:translate(-.6px,-.8px);
-}
-.liquid-wave::after {
-  border-bottom:1px solid rgba(0,8,20,calc(.12 + var(--wave-strength,.5) * .12));
-  border-right:1px solid rgba(0,8,20,calc(.05 + var(--wave-strength,.5) * .08));
-  transform:translate(.8px,1px);
-}
-.liquid-wave--surface { mix-blend-mode:soft-light; }
-html[data-quality="full"] .liquid-wave { opacity:calc((.055 + var(--wave-brightness,.20) * .13) * var(--wave-strength,.5)); }
-@keyframes liquid-wave-expand {
-  0% { transform:translate(-50%,-50%) scale(.18); opacity:0; }
-  14% { opacity:calc((.10 + var(--wave-brightness,.20) * .24) * var(--wave-strength,.5)); }
-  100% { transform:translate(-50%,-50%) scale(var(--wave-scale,8)); opacity:0; }
+   El gate dice: contraste ≥ 4.5:1 medido sobre blanco y sobre negro, y el
+   vidrio no puede pedirle legibilidad al fondo. El material dice: el vidrio
+   tiene que dejar ver lo que hay detrás. Para una sola receta de texto claro
+   las dos cosas son incompatibles: el alfa que hace pasar el gate sobre blanco
+   (~.76) es tanto tinte que el botón empieza a leer como relleno sólido.
+
+   La salida no es elegir una de las dos, es que la receta conozca el tono —
+   igual que un vidrio real se ve oscuro contra el cielo y claro contra la
+   sombra. Sobre fondo claro el cuerpo se aclara y el texto se oscurece, y con
+   eso el alfa puede bajar a ~.42 sin perder contraste.
+
+   En el laboratorio el tono lo marca el fondo elegido. En Morphiq UI esto se
+   mapea a prefers-color-scheme o a [data-theme]. */
+
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"],
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"],
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] {
+  --mq-body: rgba(250, 253, 255, 0.42);
+  --mq-lit: #ffffff;
+  --mq-edge: rgba(70, 110, 140, 0.42);
+  --mq-text: #0a1c2c;
+  --mq-brd: rgba(38, 74, 104, 0.34);
+  --mq-ring: rgba(14, 116, 168, 0.9);
+  --mq-iri: 0.20;
 }
 
-html[data-quality="balanced"][data-style="liquid-glass"] .liquid-surface,
-html[data-quality="balanced"][data-style="liquid-glass"] .ui-card,
-html[data-quality="balanced"][data-style="liquid-glass"] .gallery-card {
-  filter:url(#liquidDisplace);
-}
-html[data-quality="fallback"][data-style="liquid-glass"] .liquid-surface,
-html[data-quality="fallback"][data-style="liquid-glass"] .ui-card,
-html[data-quality="fallback"][data-style="liquid-glass"] .gallery-card {
-  filter:none;
-  backdrop-filter:blur(var(--material-blur)) saturate(135%);
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-button,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-button {
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.7);
 }
 
-html[data-style="liquid-glass"] .ui-card p,
-html[data-style="liquid-glass"] .music-player small,
-html[data-style="liquid-glass"] .weather-days { color:#c3d5df; }
-
-html[data-style="liquid-glass"] .ui-button,
-html[data-style="liquid-glass"] .player-controls button,
-html[data-style="liquid-glass"] .quick-actions button {
-  --px:50%;
-  --py:40%;
-  --press:0;
-  color:#f7fcff;
-  background:
-    radial-gradient(circle at var(--px) var(--py), rgba(255,255,255,calc(.30 + var(--material-specular) * .34 + var(--liquid-pressure) * .12)) 0 4%, rgba(255,255,255,.07) 18%, transparent 35%),
-    radial-gradient(ellipse at var(--px) var(--py), rgba(var(--accent-rgb),calc(var(--material-refraction) * .18)), transparent 58%),
-    linear-gradient(calc(var(--light-angle) + 80deg), rgba(255,255,255,.20), rgba(255,255,255,.025) 48%, rgba(var(--accent-rgb),.15)),
-    rgba(8,25,44,calc(var(--material-opacity) + .05));
-  border:1px solid rgba(255,255,255,calc(var(--border-alpha) + .16 + var(--liquid-proximity) * .12));
-  border-radius:
-    calc(12px + var(--liquid-pressure) * 8px)
-    calc(12px + var(--liquid-velocity) * 10px)
-    calc(12px + var(--liquid-pressure) * 6px)
-    calc(12px + var(--liquid-velocity) * 7px);
-  box-shadow:
-    0 calc(12px - var(--liquid-pressure) * 4px) calc(30px + var(--liquid-proximity) * 12px) rgba(0,5,18,calc(.30 + var(--liquid-pressure) * .10)),
-    inset 0 1px rgba(255,255,255,calc(.38 + var(--material-specular) * .20)),
-    inset 0 calc(-2px - var(--liquid-pressure) * 3px) calc(8px + var(--liquid-pressure) * 8px) rgba(var(--accent-rgb),calc(.10 + var(--material-refraction) * .18)),
-    0 0 calc(var(--liquid-proximity) * 24px) rgba(var(--accent-rgb),calc(var(--liquid-proximity) * .16));
-  backdrop-filter:blur(calc(var(--material-blur) * .65)) saturate(calc(140% + var(--material-refraction) * 30%));
-  transition:box-shadow 120ms ease, border-color 120ms ease, background-color 120ms ease;
-}
-html[data-style="liquid-glass"] .ui-button:hover { --liquid-proximity:.72; }
-html[data-style="liquid-glass"] .ui-button:active,
-html[data-style="liquid-glass"] .ui-button.is-pressed,
-html[data-style="liquid-glass"] .ui-button.is-liquid-pressed {
-  box-shadow:
-    0 7px 20px rgba(0,5,18,.42),
-    inset 0 5px 18px rgba(0,5,18,.16),
-    inset 0 1px rgba(255,255,255,.38),
-    0 0 22px rgba(var(--accent-rgb),.12);
-}
-html[data-style="liquid-glass"] .ui-button--primary {
-  color:#061218;
-  background:
-    radial-gradient(circle at var(--px) var(--py), rgba(255,255,255,.84) 0 4%, rgba(255,255,255,.18) 18%, transparent 34%),
-    linear-gradient(calc(var(--light-angle) + 80deg), color-mix(in srgb,var(--accent) 91%, white), color-mix(in srgb,var(--accent) 67%, #0e4a67));
-}
-html[data-style="liquid-glass"] .ui-button--danger {
-  background:
-    radial-gradient(circle at var(--px) var(--py), rgba(255,255,255,.52), transparent 31%),
-    linear-gradient(calc(var(--light-angle) + 80deg), #ff8290, #ad153b);
-}
-html[data-style="liquid-glass"] .ui-button--tertiary { background:transparent; border-color:rgba(255,255,255,.12); backdrop-filter:none; }
-
-html[data-style="liquid-glass"] .segmented-control {
-  background:rgba(4,16,28,.32);
-  border:1px solid rgba(255,255,255,.20);
-  box-shadow:inset 0 3px 10px rgba(0,5,18,.22), inset 0 1px rgba(255,255,255,.12);
-  backdrop-filter:blur(18px) saturate(150%);
-  overflow:visible;
-}
-html[data-style="liquid-glass"] .segmented-indicator {
-  background:
-    radial-gradient(circle at 35% 25%, rgba(255,255,255,.68), transparent 30%),
-    radial-gradient(circle at 75% 75%, rgba(var(--accent-rgb),.38), transparent 44%),
-    linear-gradient(135deg, rgba(var(--accent-rgb),.58), rgba(115,72,255,.32));
-  border:1px solid rgba(255,255,255,.48);
-  box-shadow:0 10px 24px rgba(0,6,18,.36), inset 0 1px rgba(255,255,255,.58), 0 0 18px rgba(var(--accent-rgb),.14);
-  border-radius:46% 54% 48% 52% / 55% 44% 56% 45%;
-}
-html[data-style="liquid-glass"] .segmented-control button:active ~ .segmented-indicator { filter:brightness(1.08); }
-
-html[data-style="liquid-glass"] .field input,
-html[data-style="liquid-glass"] .field textarea,
-html[data-style="liquid-glass"] .field select {
-  color:#f4fbff;
-  background:
-    radial-gradient(circle at var(--px,50%) var(--py,30%), rgba(255,255,255,.12), transparent 34%),
-    linear-gradient(135deg, rgba(255,255,255,.055), transparent 52%),
-    rgba(5,18,31,.28);
-  border:1px solid rgba(255,255,255,calc(.20 + var(--border-alpha) * .34));
-  box-shadow:inset 0 1px rgba(255,255,255,.15), inset 0 4px 14px rgba(0,5,18,.12);
-  backdrop-filter:blur(calc(var(--material-blur) * .58));
-  transition:border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
-}
-html[data-style="liquid-glass"] .field input:focus,
-html[data-style="liquid-glass"] .field textarea:focus,
-html[data-style="liquid-glass"] .field select:focus {
-  border-color:rgba(var(--accent-rgb),.68);
-  box-shadow:inset 0 1px rgba(255,255,255,.22), inset 0 4px 14px rgba(0,5,18,.12), 0 0 0 3px rgba(var(--accent-rgb),.16), 0 0 24px rgba(var(--accent-rgb),.10);
-}
-html[data-style="liquid-glass"] .field input::placeholder,
-html[data-style="liquid-glass"] .field textarea::placeholder { color:rgba(230,242,250,.58); }
-html[data-style="liquid-glass"] .dropdown-menu {
-  transform-origin:top left;
-  background:
-    radial-gradient(circle at var(--px,30%) var(--py,0%), rgba(255,255,255,.15), transparent 36%),
-    linear-gradient(145deg, rgba(255,255,255,.12), transparent 38%),
-    rgba(5,18,31,.74);
-  border:1px solid rgba(255,255,255,.30);
-  box-shadow:0 22px 54px rgba(0,5,18,.48), inset 0 1px rgba(255,255,255,.18);
-  backdrop-filter:blur(28px) saturate(150%);
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-button--primary,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-button--primary {
+  --mq-body: rgba(226, 244, 255, 0.52);
+  --mq-brd: rgba(20, 92, 134, 0.5);
+  color: #05202f;
 }
 
-html[data-style="liquid-glass"] .check-row input,
-html[data-style="liquid-glass"] .radio-row input {
-  appearance:none;
-  -webkit-appearance:none;
-  position:relative;
-  width:24px;
-  height:24px;
-  margin:0;
-  border:1px solid rgba(255,255,255,.34);
-  background:radial-gradient(circle at 32% 24%, rgba(255,255,255,.34), transparent 34%), rgba(5,18,31,.34);
-  box-shadow:inset 0 2px 7px rgba(0,5,18,.24), 0 4px 12px rgba(0,5,18,.18);
-  backdrop-filter:blur(12px);
-}
-html[data-style="liquid-glass"] .check-row input { border-radius:8px; }
-html[data-style="liquid-glass"] .radio-row input { border-radius:50%; }
-html[data-style="liquid-glass"] .check-row input::after,
-html[data-style="liquid-glass"] .radio-row input::after {
-  content:"";
-  position:absolute;
-  inset:5px;
-  opacity:0;
-  transform:scale(.35);
-  transition:opacity 140ms ease, transform 220ms cubic-bezier(.2,.9,.2,1.25);
-}
-html[data-style="liquid-glass"] .check-row input::after {
-  inset:3px 7px 6px 6px;
-  border-right:3px solid #061218;
-  border-bottom:3px solid #061218;
-  transform:rotate(45deg) scale(.35);
-}
-html[data-style="liquid-glass"] .radio-row input::after { border-radius:50%; background:var(--accent); box-shadow:0 0 14px rgba(var(--accent-rgb),.56), inset 0 1px rgba(255,255,255,.76); }
-html[data-style="liquid-glass"] .check-row input:checked,
-html[data-style="liquid-glass"] .radio-row input:checked { background:radial-gradient(circle at 30% 22%, white, transparent 34%), var(--accent); border-color:rgba(255,255,255,.68); }
-html[data-style="liquid-glass"] .check-row input:checked::after { opacity:1; transform:rotate(45deg) scale(1); }
-html[data-style="liquid-glass"] .radio-row input:checked::after { opacity:1; transform:scale(1); }
-
-html[data-style="liquid-glass"] .switch-control {
-  width:60px;
-  height:34px;
-  padding:3px;
-  background:
-    radial-gradient(circle at calc(16% + var(--switch-progress) * 68%) 50%, rgba(var(--accent-rgb),calc(.12 + var(--switch-progress) * .20)), transparent 46%),
-    rgba(4,16,28,.40);
-  border:1px solid rgba(255,255,255,.25);
-  box-shadow:inset 0 4px 12px rgba(0,5,18,.28), inset 0 1px rgba(255,255,255,.15), 0 6px 16px rgba(0,5,18,.18);
-  backdrop-filter:blur(16px);
-  overflow:visible;
-}
-html[data-style="liquid-glass"] .switch-control[aria-checked="true"] { background-color:rgba(var(--accent-rgb),.21); }
-html[data-style="liquid-glass"] .switch-thumb {
-  position:relative;
-  width:28px;
-  height:28px;
-  transform:translateX(calc(var(--switch-progress) * 26px));
-  background:
-    radial-gradient(circle at 30% 24%, rgba(255,255,255,.94), transparent 31%),
-    linear-gradient(145deg, rgba(255,255,255,.68), rgba(var(--accent-rgb),.38));
-  border:1px solid rgba(255,255,255,.72);
-  box-shadow:0 8px 20px rgba(0,5,18,.34), inset 0 1px white, 0 0 14px rgba(var(--accent-rgb),calc(var(--switch-progress) * .24));
-}
-html[data-style="liquid-glass"] .switch-thumb::before {
-  content:"";
-  position:absolute;
-  top:8px;
-  width:16px;
-  height:12px;
-  right:calc(18px - var(--switch-progress) * 34px);
-  border-radius:50%;
-  background:linear-gradient(90deg, rgba(var(--accent-rgb),calc(.05 + var(--switch-progress) * .16)), transparent);
-  filter:blur(3px);
-  opacity:calc(.30 + var(--liquid-pressure) * .50);
-  z-index:-1;
-}
-html[data-style="liquid-glass"] .switch-thumb::after { content:""; position:absolute; inset:4px; border-radius:50%; border:1px solid rgba(var(--accent-rgb),.26); }
-
-html[data-style="liquid-glass"] .slider-track {
-  height:10px;
-  background:
-    radial-gradient(circle at var(--value) 50%, rgba(255,255,255,calc(.13 + var(--liquid-pressure) * .18)), rgba(var(--accent-rgb),.12) 14px, transparent 34px),
-    rgba(4,16,28,.36);
-  border:1px solid rgba(255,255,255,.20);
-  box-shadow:inset 0 3px 8px rgba(0,5,18,.32), inset 0 1px rgba(255,255,255,.10);
-  overflow:visible;
-  transition:height 140ms ease, box-shadow 140ms ease;
-}
-html[data-style="liquid-glass"] .custom-slider.is-dragging .slider-track { height:15px; box-shadow:inset 0 4px 10px rgba(0,5,18,.34), 0 0 18px rgba(var(--accent-rgb),.12); }
-html[data-style="liquid-glass"] .slider-fill { background:linear-gradient(90deg, rgba(var(--accent-rgb),.42), var(--accent)); box-shadow:0 0 14px rgba(var(--accent-rgb),.36); }
-html[data-style="liquid-glass"] .slider-thumb {
-  width:28px;
-  height:28px;
-  background:radial-gradient(circle at 30% 25%, white, rgba(255,255,255,.28) 40%, rgba(var(--accent-rgb),.30));
-  border:1px solid rgba(255,255,255,.74);
-  box-shadow:0 8px 20px rgba(0,5,18,.38), 0 0 18px rgba(var(--accent-rgb),.24), inset 0 1px rgba(255,255,255,.72);
-}
-html[data-style="liquid-glass"] .custom-slider.is-dragging .slider-thumb { box-shadow:0 10px 24px rgba(0,5,18,.40), 0 0 26px rgba(var(--accent-rgb),.34), inset 0 1px white; }
-
-html[data-style="liquid-glass"] .knob {
-  background:
-    radial-gradient(circle at 34% 27%, rgba(255,255,255,.78), transparent 18%),
-    radial-gradient(circle at 50% 56%, rgba(var(--accent-rgb),calc(.08 + var(--material-refraction) * .24)), transparent 58%),
-    conic-gradient(from var(--light-angle), rgba(var(--accent-rgb),.38), rgba(255,255,255,.08), rgba(139,83,255,.35), rgba(255,255,255,.14), rgba(var(--accent-rgb),.38));
-  border:1px solid rgba(255,255,255,.54);
-  box-shadow:0 16px 34px rgba(0,5,18,.4), inset 0 1px rgba(255,255,255,.60), inset 0 -8px 20px rgba(0,5,18,.20), 0 0 22px rgba(var(--accent-rgb),calc(var(--liquid-proximity) * .15));
-  backdrop-filter:blur(20px);
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-button--danger,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-button--danger {
+  --mq-body: rgba(255, 232, 236, 0.56);
+  --mq-brd: rgba(150, 30, 54, 0.46);
+  color: #4a0713;
 }
 
-html[data-style="liquid-glass"] .floating-dock button.is-active,
-html[data-style="liquid-glass"] .tabs-demo button.is-active,
-html[data-style="liquid-glass"] .sidebar-demo button.is-active,
-html[data-style="liquid-glass"] .pagination button.is-active {
-  background:
-    radial-gradient(circle at 32% 24%, rgba(255,255,255,.58), transparent 32%),
-    rgba(var(--accent-rgb),.24);
-  border:1px solid rgba(255,255,255,.26);
-  box-shadow:0 7px 16px rgba(0,5,18,.24), inset 0 1px rgba(255,255,255,.30), 0 0 16px rgba(var(--accent-rgb),.13);
-}
-html[data-style="liquid-glass"] .progress-track { background:rgba(4,16,28,.32); border:1px solid rgba(255,255,255,.18); overflow:visible; }
-html[data-style="liquid-glass"] .progress-fill { box-shadow:0 0 16px rgba(var(--accent-rgb),.34); }
-html[data-style="liquid-glass"] .circular-progress::before,
-html[data-style="liquid-glass"] .gauge::after { background:rgba(5,16,29,.88); }
-html[data-style="liquid-glass"] .drop-zone { background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.26); backdrop-filter:blur(16px); }
-html[data-style="liquid-glass"] .drop-zone.is-over { box-shadow:inset 0 0 40px rgba(var(--accent-rgb),.12), 0 0 30px rgba(var(--accent-rgb),.12); }
-
-html[data-style="liquid-glass"][data-variant="conservative"] { --material-refraction:.24; --material-dispersion:.04; --ripple-intensity:.32; --ripple-brightness:.14; --ripple-count:1; --stretch-limit:.08; }
-html[data-style="liquid-glass"][data-variant="expressive"] { --material-refraction:.44; --material-dispersion:.09; --ripple-intensity:.50; --ripple-brightness:.22; --ripple-count:2; --stretch-limit:.16; }
-html[data-style="liquid-glass"][data-variant="experimental"] { --material-refraction:.66; --material-dispersion:.16; --ripple-intensity:.68; --ripple-brightness:.34; --ripple-count:3; --stretch-limit:.24; }
-html[data-style="liquid-glass"][data-variant="experimental"] .liquid-surface,
-html[data-style="liquid-glass"][data-variant="experimental"] .ui-card,
-html[data-style="liquid-glass"][data-variant="experimental"] .ui-button {
-  border-radius:
-    calc(38% + var(--liquid-pressure) * 8%)
-    calc(58% - var(--liquid-proximity) * 6%)
-    calc(45% + var(--liquid-proximity) * 7%)
-    calc(55% - var(--liquid-pressure) * 6%) /
-    calc(52% + var(--liquid-pressure) * 5%)
-    calc(43% + var(--liquid-proximity) * 6%)
-    calc(58% - var(--liquid-pressure) * 4%)
-    calc(47% + var(--liquid-proximity) * 4%);
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .field input,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .field input,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .field textarea,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .field textarea,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .field select,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .field select {
+  --mq-body: rgba(255, 255, 255, 0.62);
+  color: #0a1c2c;
 }
 
-body.reduced-motion .liquid-wave { display:none; }
-body.reduced-motion .liquid-surface,
-body.reduced-motion .liquid-elastic,
-body.reduced-motion .liquid-reactive {
-  transform:none !important;
-  --liquid-pressure:0 !important;
-  --liquid-velocity:0 !important;
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-card p,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-card p,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .gallery-card p,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .gallery-card p,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .player-meta small,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .player-meta small {
+  color: rgba(16, 40, 60, 0.92);
+  text-shadow: none;
 }
 
-[data-style-scope="liquid-glass"] .compare-card__stage {
-  background:
-    radial-gradient(circle at 24% 25%,rgba(38,255,223,.38),transparent 28%),
-    radial-gradient(circle at 75% 28%,rgba(159,72,255,.4),transparent 30%),
-    linear-gradient(145deg,#03131e,#111238);
-  color:#fff;
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-card h5,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-card h5,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-card strong,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-card strong,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .gallery-card h4,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .gallery-card h4 {
+  text-shadow: none;
 }
-[data-style-scope="liquid-glass"] .ui-button,
-[data-style-scope="liquid-glass"] .player-controls button {
-  color:#fff;
-  background:radial-gradient(circle at var(--px,35%) var(--py,25%),rgba(255,255,255,.65),transparent 30%),linear-gradient(135deg,rgba(255,255,255,.2),rgba(255,255,255,.03)),rgba(8,25,44,.24);
-  border:1px solid rgba(255,255,255,.5);
-  box-shadow:0 14px 34px rgba(0,5,18,.38),inset 0 1px rgba(255,255,255,.5);
-  backdrop-filter:blur(14px) saturate(155%);
-}
-[data-style-scope="liquid-glass"] .switch-control { background:rgba(4,16,28,.38);border:1px solid rgba(255,255,255,.28);box-shadow:inset 0 4px 12px rgba(0,5,18,.26); }
-[data-style-scope="liquid-glass"] .switch-thumb { background:radial-gradient(circle at 30% 25%,white,transparent 35%),linear-gradient(145deg,rgba(255,255,255,.66),rgba(106,228,255,.38));border:1px solid rgba(255,255,255,.7);box-shadow:0 8px 20px rgba(0,5,18,.34); }
-[data-style-scope="liquid-glass"] .slider-track { background:rgba(4,16,28,.34);border:1px solid rgba(255,255,255,.2);box-shadow:inset 0 3px 8px rgba(0,5,18,.32); }
-[data-style-scope="liquid-glass"] .slider-thumb { background:radial-gradient(circle at 30% 25%,white,rgba(255,255,255,.28) 40%,rgba(106,228,255,.28));border:1px solid rgba(255,255,255,.72);box-shadow:0 8px 20px rgba(0,5,18,.38); }
-[data-style-scope="liquid-glass"] .field input,
-[data-style-scope="liquid-glass"] .ui-card,
-[data-style-scope="liquid-glass"] .music-player,
-[data-style-scope="liquid-glass"] .floating-dock {
-  color:#fff;
-  background:radial-gradient(circle at var(--px,35%) var(--py,25%),rgba(255,255,255,.35),transparent 32%),linear-gradient(135deg,rgba(255,255,255,.18),rgba(255,255,255,.02)),rgba(7,23,40,.2);
-  border:1px solid rgba(255,255,255,.46);
-  box-shadow:0 18px 44px rgba(0,5,18,.42),inset 0 1px rgba(255,255,255,.42);
-  backdrop-filter:blur(15px) saturate(150%);
+
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-button:disabled,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-button:disabled,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] [aria-disabled="true"],
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] [aria-disabled="true"] {
+  --mq-body: rgba(228, 234, 240, 0.78);
+  color: rgba(28, 50, 68, 0.72);
 }

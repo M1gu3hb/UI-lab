@@ -468,3 +468,66 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
 }
 
 .sr-only { position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important; }
+
+/* ==========================================================================
+   Capa de fondo por canvas
+   ==========================================================================
+   El fondo del laboratorio deja de ser CSS y pasa a ser un bitmap. Dos razones:
+   con degradados planos el vidrio no tiene nada que doblar, y el motor de
+   lentes necesita esos mismos píxeles como textura. Si el fondo viviera en CSS
+   habría que escribirlo dos veces y las dos versiones se separarían.
+
+   .scene sigue existiendo como respaldo sin JS. */
+
+/* La regla global `canvas { max-width: 100% }` aplastaba el canvas de la lente:
+   su bitmap incluye un margen para la cáustica y la sombra de contacto, así que
+   es más ancho que el elemento. Al recortarlo, la óptica salía comprimida en
+   horizontal y aparecía una costura vertical dentro del control. */
+.mq-lens,
+#mqBackdrop {
+  max-width: none;
+  max-height: none;
+}
+
+#mqBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+html[data-mq-backdrop="canvas"] .scene { display: none; }
+
+/* El texto del laboratorio sobre fondos claros. */
+body[data-backdrop-tone="light"] {
+  --page-fg: #14213a;
+  --muted: #4d5c72;
+  --panel-bg: rgba(255, 255, 255, 0.74);
+  --panel-border: rgba(16, 24, 40, 0.14);
+}
+
+/* Contraste medido de verdad, no estimado. */
+.contrast-readout strong[data-pass="false"] { color: var(--danger); }
+.contrast-readout strong[data-pass="true"] { color: var(--success); }
+
+/* El fondo del body es opaco y taparía el canvas, que pinta en z-index -2.
+   Con la capa de canvas activa, el color base lo aporta <html>. */
+html[data-mq-backdrop="canvas"] body { background: transparent; }
+
+/* Recipe Inspector: el contrato --mq-* y las perillas del laboratorio son dos
+   cosas distintas y tienen que verse distintas. */
+.token-group { margin-bottom: 16px; }
+.token-group h5 {
+  margin: 0 0 8px;
+  font-size: .68rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.token-row--contract dt { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.token-row--contract dt small { color: var(--muted); font-size: .64rem; font-variant-numeric: tabular-nums; }
+.token-row--contract dd p { margin: 3px 0 0; color: var(--muted); font-size: .68rem; line-height: 1.35; }
+.token-note { color: var(--muted); font-size: .72rem; }

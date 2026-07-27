@@ -39,7 +39,7 @@ const MATERIALS = [
   { slug: 'glass',        label: 'Glassmorphism', status: 'legacy',  css: 'styles/glass.css',        js: 'scripts/glass.js' },
   { slug: 'skeuo',        label: 'Skeuomorphism', status: 'legacy',  css: 'styles/skeuo.css',        js: 'scripts/skeuo.js' },
   { slug: 'adaptive',     label: 'Polymorphism',  status: 'pending', css: 'styles/adaptive.css',     js: null },
-  { slug: 'liquid-glass', label: 'Liquid Glass',  status: 'legacy',  css: 'styles/liquid-glass.css', js: 'scripts/liquid-glass.js' }
+  { slug: 'liquid-glass', label: 'Liquid Glass',  status: 'shipped',  css: 'styles/liquid-glass.css', js: 'scripts/liquid-glass.js' }
 ];
 
 /** Archivos de infraestructura del laboratorio, no recetas de material. */
@@ -47,7 +47,8 @@ const SHELL_FILES = [
   'index.html',
   'styles/base.css',
   'scripts/app.js',
-  'scripts/liquid-renderer.js',
+  'scripts/backdrops.js',
+  'scripts/lens-engine.js',
   'scripts/build.mjs',
   'scripts/validate.mjs'
 ];

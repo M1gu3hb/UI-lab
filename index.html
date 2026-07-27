@@ -90,11 +90,13 @@
           </label>
           <label>Fondo
             <select id="backgroundSelect" name="background">
-              <option value="aurora">Aurora</option>
-              <option value="night">Gradiente nocturno</option>
+              <option value="aurora">Aurora · cintas y estrellas</option>
+              <option value="landscape">Paisaje · horizonte y reflejo</option>
+              <option value="type">Tipografía enorme</option>
+              <option value="grid">Damero de calibración</option>
+              <option value="night">Ciudad nocturna</option>
               <option value="sunset">Sunset</option>
               <option value="tropical">Tropical</option>
-              <option value="landscape">Paisaje</option>
               <option value="abstract">Formas abstractas</option>
               <option value="light">Modo claro</option>
             </select>
@@ -215,7 +217,6 @@
               <span class="quality-badge" id="qualityBadge">Full</span>
             </div>
             <div id="materialStage" class="material-stage stage-skeuo">
-              <canvas id="liquidCanvas" aria-hidden="true"></canvas>
               <div class="stage-grid" aria-hidden="true"></div>
               <div id="featuredComponent" class="featured-component"></div>
               <div class="stage-note" id="stageNote">Arrastra, presiona y usa el teclado.</div>
@@ -361,9 +362,10 @@
     </filter>
   </svg>
 
+  <script src="scripts/backdrops.js" defer></script>
+  <script src="scripts/lens-engine.js" defer></script>
   <script src="scripts/skeuo.js" defer></script>
   <script src="scripts/glass.js" defer></script>
-  <script src="scripts/liquid-renderer.js" defer></script>
   <script src="scripts/liquid-glass.js" defer></script>
   <script src="scripts/app.js" defer></script>
 </body>

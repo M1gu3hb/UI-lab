@@ -72,60 +72,131 @@
     }
   };
 
-  const classCode = `.liquid-control {
-  --px: 50%;
-  --py: 40%;
-  --liquid-x: 0px;
-  --liquid-y: 0px;
-  --liquid-scale-x: 1;
-  --liquid-scale-y: 1;
-  --liquid-tilt-x: 0deg;
-  --liquid-tilt-y: 0deg;
-  --liquid-pressure: 0;
+  /* Contrato --mq-*: lo que se congela en el componente al inyectar en Morphiq
+     UI. Cada token documenta qué hace y en qué rango tiene sentido, porque un
+     token sin rango es un número mágico que la siguiente persona no se atreve
+     a tocar. */
+  const mqTokens = [
+    ['--mq-body', 'rgba(12,29,50,.76)', 'Cuerpo del vidrio: color y cuanto tine lo refractado. El alfa es el gate de contraste: por debajo de .66 el texto claro cae de 4.5:1 sobre fondo blanco.', 'alfa .66-.88'],
+    ['--mq-lit', '#cfeeff', 'Color del highlight del canto orientado a la luz.', 'color'],
+    ['--mq-edge', 'rgba(3,12,26,.62)', 'Canto inferior y profundidad al presionar.', 'color'],
+    ['--mq-text', '#f2fbff', 'Color de texto sobre el material.', 'color'],
+    ['--mq-brd', 'rgba(196,232,255,.44)', 'Borde real. Es lo unico que sobrevive en forced-colors.', 'color'],
+    ['--mq-ring', 'rgba(120,224,255,.85)', 'Anillo de foco.', 'color'],
+    ['--mq-thick', '3.4px', 'Grosor del canto. Es el token que mas define el material: por debajo de 2px deja de leer como vidrio.', '1.5-7px'],
+    ['--mq-iri', '.16', 'Irisacion cromatica del canto. Por encima de .25 el material se vuelve jabon.', '0-.4'],
+    ['--mq-caustic', '.62', 'Charco de luz proyectado bajo el cuerpo. Vende el espesor mas que cualquier highlight.', '0-1'],
+    ['--mq-flat', '0', '0 = liquido deformable, 1 = lamina rigida. Es el token que separa liquid-glass de glass.', '0 o 1'],
+    ['--mq-blur-scale', '.55', 'Multiplica el desenfoque global. El vidrio dobla mas de lo que difumina.', '.3-2'],
+    ['--mq-radius', '18px', 'Radio de esquina de la superficie.', '8-999px']
+  ];
+
+  const classCode = `/* Auto-contenido: cada var() con fallback literal, cero :root.
+   Pegado en un HTML vacio se ve igual. */
+.mq-liquid-glass {
+  --mq-body: rgba(12, 29, 50, .76);
+  --mq-lit: #cfeeff;
+  --mq-edge: rgba(3, 12, 26, .62);
+  --mq-text: #f2fbff;
+  --mq-brd: rgba(196, 232, 255, .44);
+  --mq-ring: rgba(120, 224, 255, .85);
+  --mq-thick: 3.4px;
+  --mq-iri: .16;
+  --mq-caustic: .62;
+  --mq-flat: 0;
+
   position: relative;
-  isolation: isolate;
+  isolation: isolate;              /* contiene el canvas de la lente */
+  border: 1px solid var(--mq-brd, rgba(196, 232, 255, .44));
+  border-radius: var(--mq-radius, 18px);
+  color: var(--mq-text, #f2fbff);
+  background: var(--mq-body, rgba(12, 29, 50, .76));
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, .22) inset,
+    0 -1px 0 0 var(--mq-edge, rgba(3, 12, 26, .62)) inset,
+    0 12px 30px -12px rgba(2, 10, 24, .72);
+}
+
+/* Sin WebGL el canto se construye con gradientes: sigue habiendo espesor,
+   luz direccional y bisel. */
+.mq-liquid-glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
   background:
-    radial-gradient(circle at var(--px) var(--py), rgba(255,255,255,.52), transparent 31%),
-    linear-gradient(135deg, rgba(255,255,255,.20), rgba(255,255,255,.03) 48%),
-    rgba(8,25,44,.24);
-  border: 1px solid rgba(255,255,255,.5);
-  backdrop-filter: blur(14px) saturate(155%);
-  transform:
-    perspective(800px)
-    translate3d(var(--liquid-x), var(--liquid-y), 0)
-    rotateX(var(--liquid-tilt-x))
-    rotateY(var(--liquid-tilt-y))
-    scaleX(var(--liquid-scale-x))
-    scaleY(var(--liquid-scale-y));
-  transform-origin: var(--px) var(--py);
+    linear-gradient(var(--light-angle, 315deg),
+      rgba(255,255,255,.62) 0,
+      rgba(255,255,255,.06) calc(var(--mq-thick, 3.4px) * 1.6),
+      transparent calc(var(--mq-thick, 3.4px) * 3.4)),
+    linear-gradient(calc(var(--light-angle, 315deg) + 180deg),
+      rgba(150,220,255,.34) 0,
+      transparent calc(var(--mq-thick, 3.4px) * 2.6));
+  backdrop-filter: blur(10px) saturate(150%);
+}
+
+/* Al presionar entra mas vidrio en el camino optico. */
+.mq-liquid-glass:active { --mq-thick: 5.6px; --mq-caustic: .28; }
+
+.mq-liquid-glass:focus-visible,
+.mq-liquid-glass[data-focus="true"] {
+  outline: 2px solid var(--mq-ring, rgba(120, 224, 255, .85));
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .mq-liquid-glass {
+    border: 2px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
 }`;
 
-  const behaviorCode = `export function attachLiquidMaterial(element, parentSurface) {
-  const state = { x: 0, y: 0, vx: 0, vy: 0, scaleX: 1, scaleY: 1 };
+  const behaviorCode = `/* El motor de lentes registra la superficie y le inyecta un <canvas> hijo con
+   z-index -1. El texto nunca entra en la capa distorsionada: por eso no hay
+   halos sobre el contenido. */
+import { LensEngine } from './lens-engine.js';
+
+const engine = new LensEngine();
+engine.mount(document.body);
+engine.setBackdrop('landscape');
+engine.setEnabled(true);
+
+export function attachLiquidGlass(element) {
+  engine.register(element);
+
   element.addEventListener('pointerdown', event => {
-    const localX = event.offsetX / element.offsetWidth;
-    const localY = event.offsetY / element.offsetHeight;
-    element.style.setProperty('--px', localX * 100 + '%');
-    element.style.setProperty('--py', localY * 100 + '%');
-    element.classList.add('is-liquid-pressed');
-    parentSurface?.dispatchEvent(new CustomEvent('liquid-impact', {
-      bubbles: true,
-      detail: { clientX: event.clientX, clientY: event.clientY, strength: .75 }
-    }));
+    // Tension superficial: el impacto deforma el campo de espesor del shader,
+    // no dibuja un halo que se expande.
+    engine.impact(element, event.clientX, event.clientY, 1);
+    element.style.setProperty('--liquid-pressure', '1');
   });
+
+  const release = () => element.style.setProperty('--liquid-pressure', '0');
+  element.addEventListener('pointerup', release);
+  element.addEventListener('pointercancel', release);
 }`;
 
-  const shaderCode = () => window.MorphiqLiquidShader?.fragmentSource || '// Shader no disponible.';
+  const shaderCode = () => window.MorphiqLensShader?.fragmentSource || '// Shader no disponible.';
 
   window.MorphiqRecipes['liquid-glass'] = {
     name: 'Liquid Glass',
     description: 'Superficie óptica dinámica con campo de altura, normales derivadas, refracción, tensión y recuperación amortiguada.',
     variants,
+    mqTokens,
     classCode,
     behaviorCode,
     get shaderCode() { return shaderCode(); },
-    exampleCode: `<article class="liquid-surface liquid-reactive">
-  <button class="liquid-elastic">Explorar</button>
+    exampleCode: `<button class="mq-liquid-glass">Explorar material</button>
+
+<article class="mq-liquid-glass" style="--mq-thick:4.6px; --mq-body:rgba(11,26,45,.62)">
+  <h3>Superficie grande</h3>
+  <p>Mas cuerpo que un control: el texto de 14px no puede
+     pedirle legibilidad al fondo.</p>
 </article>`,
     dependencies: 'Sin dependencias externas. Full usa WebGL nativo; Balanced usa Canvas/SVG; Fallback conserva spring y óptica CSS.',
     notes: 'Las ondas deforman un campo de altura y producen refracción, reflejo especular y cáusticas suaves. El brillo y la cantidad de frentes se controlan por separado.'
@@ -137,8 +208,21 @@
     '[role="tab"]', '[tabindex]:not([tabindex="-1"])'
   ].join(',');
 
+  /* Caché de tokens por frame.
+     readRootNumber hacía un getComputedStyle por token, por elemento y por
+     frame: con 40 componentes animándose eso son cientos de recálculos de
+     estilo por frame y era el techo real de rendimiento del laboratorio.
+     Ahora se lee una vez por frame y se comparte. */
+  let tokenCache = null;
+  let tokenFrame = -1;
+
   function readRootNumber(token, fallback) {
-    const value = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(token));
+    const now = window.__mqFrameId ?? 0;
+    if (tokenFrame !== now || !tokenCache) {
+      tokenCache = getComputedStyle(document.documentElement);
+      tokenFrame = now;
+    }
+    const value = Number.parseFloat(tokenCache.getPropertyValue(token));
     return Number.isFinite(value) ? value : fallback;
   }
 
@@ -454,6 +538,13 @@
 
     spawnWave(element, clientX, clientY, strength = 1, kind = 'surface') {
       if (document.body.classList.contains('reduced-motion')) return;
+      /* Con el motor de lentes activo la onda es deformación del campo de
+         espesor dentro del shader. Superponerle además estos halos DOM es
+         justo el movimiento decorativo que el material no debe tener. */
+      if (document.documentElement.dataset.mqLens === 'on') {
+        window.MorphiqLensEngineInstance?.impact(element, clientX, clientY, strength);
+        return;
+      }
       const rect = element.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
       const ripple = readRootNumber('--ripple-intensity', 0.48);
@@ -494,7 +585,7 @@
     frame(element, state, time) {
       const dt = Math.min((time - state.last) / 1000, 0.032);
       state.last = time;
-      const styles = getComputedStyle(document.documentElement);
+      window.__mqFrameId = time;
       const stiffness = readRootNumber('--motion-stiffness', 260);
       const damping = readRootNumber('--motion-damping', 24);
       const motion = readRootNumber('--motion-intensity', 0.7);

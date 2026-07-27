@@ -38,6 +38,7 @@
 
   let liquidRenderer = null;
   let liquidController = null;
+  let lensEngine = null;
   let galleryAudioTimer = null;
 
   const tokenControlMap = {
@@ -134,6 +135,7 @@
     target.innerHTML = featuredMarkup(state.component);
     applyForcedState(target);
     attachInteractions(target);
+    syncLenses(target);
   }
 
   function renderStates() {
@@ -142,8 +144,11 @@
     ];
     $('#stateStrip').innerHTML = states.map(([label, className]) => `<div class="state-demo"><span>${label}</span><div>${stateMarkup(label === 'Rest' ? componentNames[state.component] : label, className)}</div></div>`).join('');
     attachInteractions($('#stateStrip'));
+    syncLenses($('#stateStrip'));
+    /* data-focus="true" es el equivalente capturable de :focus-visible. Sin él
+       el estado de foco no aparece en ninguna captura. */
     const focus = $('.is-focus', $('#stateStrip'));
-    if (focus) focus.style.boxShadow = 'var(--focus-ring)';
+    if (focus) focus.setAttribute('data-focus', 'true');
     const hover = $('.is-hover', $('#stateStrip'));
     if (hover) hover.style.filter = 'brightness(1.06)';
   }
@@ -214,6 +219,7 @@
     gallery.innerHTML = Object.values(gallerySections).map(section => section()).join('');
     filterGallery();
     attachInteractions(gallery);
+    syncLenses(gallery);
   }
 
   function filterGallery() {
@@ -603,6 +609,9 @@
     if (!labMeta[nextStyle]) return;
     state.style = nextStyle;
     root.dataset.style = nextStyle;
+    /* En la vista Laboratorio el material vive en <html>; en Compare lo llevan
+       las tarjetas. Un solo juego de reglas sirve a las dos. */
+    if (state.view !== 'compare') root.dataset.mqMaterial = nextStyle;
     $('#styleSelect').value = nextStyle;
     $('#labHeading').textContent = labMeta[nextStyle].title;
     $('#labDescription').textContent = labMeta[nextStyle].description;
@@ -615,7 +624,9 @@
     renderGallery();
     renderRecipe();
     renderCompare();
-    liquidRenderer?.touch();
+    lensEngine?.setEnabled(lensActive());
+    syncLenses();
+    lensEngine?.invalidate();
   }
 
   function applyVariant(variant) {
@@ -630,7 +641,7 @@
     }
     renderRecipe();
     liquidController?.refreshOptics?.();
-    liquidRenderer?.touch();
+    lensEngine?.invalidate();
   }
 
   function syncControlsFromCss() {
@@ -657,8 +668,15 @@
   function setBackground(background) {
     state.background = background;
     body.dataset.background = background;
+    /* El tono va en <html> además de en <body>: la receta de material se ancla
+       en [data-mq-material], que en la vista Laboratorio vive en <html>, y un
+       selector que arranque en body nunca alcanzaría a su propio ancestro. */
+    const tone = window.MorphiqBackdrops?.isLight(background) ? 'light' : 'dark';
+    body.dataset.backdropTone = tone;
+    root.dataset.backdropTone = tone;
     $('#backgroundSelect').value = background;
     $('#miniBackground').value = ['aurora','sunset','night','light'].includes(background) ? background : 'aurora';
+    lensEngine?.setBackdrop(background);
     updateContrastEstimate();
   }
 
@@ -678,7 +696,8 @@
     root.dataset.quality = quality;
     $('#qualitySelect').value = quality;
     $('#qualityBadge').textContent = quality[0].toUpperCase() + quality.slice(1);
-    liquidRenderer?.setQuality(quality);
+    lensEngine?.setEnabled(lensActive());
+    syncLenses();
     liquidController?.refreshOptics?.();
     renderRecipe();
   }
@@ -702,10 +721,36 @@
     const tokens = [
       '--material-bg','--material-border','--material-highlight','--material-shadow','--material-radius','--material-depth','--material-texture','--material-blur','--material-refraction','--material-dispersion','--material-specular','--material-roughness','--ripple-intensity','--ripple-brightness','--ripple-count','--motion-stiffness','--motion-damping','--motion-duration'
     ];
-    $('#tokenList').innerHTML = tokens.map(token => `<div><dt>${token}</dt><dd>${computed.getPropertyValue(token).trim() || recipe.variants[state.variant]?.[token] || '—'}</dd></div>`).join('');
+    /* Dos vocabularios, dos papeles, y el inspector tiene que dejar claro cuál
+       es cuál: los --material-* / --light-* son las perillas del laboratorio,
+       vivas y globales; los --mq-* son el contrato del componente, y son los
+       que se congelan al inyectar en Morphiq UI. */
+    const sample = $('#featuredComponent .ui-button, #featuredComponent .ui-card, #featuredComponent *');
+    const sampleStyles = sample ? getComputedStyle(sample) : computed;
+    const contract = recipe.mqTokens ?? [];
+
+    const knobRows = tokens.map(token =>
+      `<div><dt>${token}</dt><dd>${computed.getPropertyValue(token).trim() || recipe.variants[state.variant]?.[token] || '—'}</dd></div>`
+    ).join('');
+    const contractRows = contract.map(([token, fallback, doc, range]) => {
+      const live = sampleStyles.getPropertyValue(token).trim() || fallback;
+      return `<div class="token-row--contract"><dt>${token}<small>${range}</small></dt><dd>${live}<p>${doc}</p></dd></div>`;
+    }).join('');
+
+    $('#tokenList').innerHTML = contract.length
+      ? `<div class="token-group"><h5>Contrato --mq-* · se congela en el componente</h5>${contractRows}</div>
+         <div class="token-group"><h5>Perillas del laboratorio · globales y vivas</h5>${knobRows}</div>`
+      : `<div class="token-group"><h5>Perillas del laboratorio</h5>${knobRows}</div>
+         <p class="token-note">Esta receta todavía no declara contrato --mq-*.</p>`;
+
     const vars = tokens.map(token => `  ${token}: ${computed.getPropertyValue(token).trim() || recipe.variants[state.variant]?.[token] || 'initial'};`).join('\n');
+    const contractVars = contract
+      .map(([token, fallback]) => `  ${token}: ${sampleStyles.getPropertyValue(token).trim() || fallback};`)
+      .join('\n');
     const code = {
-      'css-vars': `:root {\n${vars}\n}`,
+      'css-vars': contract.length
+        ? `/* Contrato del componente. Auto-contenido: se pega dentro de la clase\n   del componente, no en :root. */\n.mq-${state.style} {\n${contractVars}\n}\n\n/* Perillas del laboratorio, para reproducir el ajuste actual. */\n:root {\n${vars}\n}`
+        : `:root {\n${vars}\n}`,
       'css-class': recipe.classCode,
       behavior: recipe.behaviorCode,
       shader: typeof recipe.shaderCode === 'function' ? recipe.shaderCode() : recipe.shaderCode,
@@ -727,9 +772,10 @@
       state.style = style;
       const markup = featuredMarkup(type);
       state.style = oldStyle;
-      return `<article class="compare-card" data-style-scope="${style}"><header class="compare-card__header"><h3>${title}</h3><p>${window.MorphiqRecipes[style].description}</p></header><div class="compare-card__stage">${markup}</div><div class="compare-card__notes">${note}</div></article>`;
+      return `<article class="compare-card" data-style-scope="${style}" data-mq-material="${style}"><header class="compare-card__header"><h3>${title}</h3><p>${window.MorphiqRecipes[style].description}</p></header><div class="compare-card__stage">${markup}</div><div class="compare-card__notes">${note}</div></article>`;
     }).join('');
     attachCompareInteractions($('#compareGrid'));
+    syncLenses($('#compareGrid'));
   }
 
   function attachCompareInteractions(scope) {
@@ -742,11 +788,66 @@
     liquidController?.bind(scope);
   }
 
+  /* Contraste WCAG medido, no estimado.
+     El readout anterior era una fórmula inventada (base + opacidad * 4) que
+     devolvía un número plausible sin mirar un solo pixel. En un laboratorio
+     cuyo gate es "≥ 4.5:1 sobre los 5 materiales", un medidor falso es peor
+     que ninguno. */
+  function parseRgb(value) {
+    const match = String(value).match(/-?[\d.]+/g);
+    if (!match) return null;
+    const [r, g, b, a = 1] = match.map(Number);
+    return { r, g, b, a };
+  }
+
+  function relativeLuminance({ r, g, b }) {
+    const channel = value => {
+      const scaled = value / 255;
+      return scaled <= 0.03928 ? scaled / 12.92 : Math.pow((scaled + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+  }
+
+  /** Compone una pila de colores translúcidos sobre una base opaca. */
+  function flatten(layers, base) {
+    return layers.reduce((under, over) => {
+      if (!over || !over.a) return under;
+      return {
+        r: over.r * over.a + under.r * (1 - over.a),
+        g: over.g * over.a + under.g * (1 - over.a),
+        b: over.b * over.a + under.b * (1 - over.a),
+        a: 1
+      };
+    }, base);
+  }
+
+  function contrastRatio(foreground, background) {
+    const light = Math.max(relativeLuminance(foreground), relativeLuminance(background));
+    const dark = Math.min(relativeLuminance(foreground), relativeLuminance(background));
+    return (light + 0.05) / (dark + 0.05);
+  }
+
   function updateContrastEstimate() {
-    const base = state.background === 'light' ? 5.8 : state.background === 'abstract' ? 6.1 : 7.2;
-    const opacity = Number($('#opacity').value) / 100;
-    const score = Math.max(3.1, Math.min(12, base + opacity * 4 - (state.style === 'liquid-glass' ? .4 : 0)));
-    $('#contrastValue').textContent = `${score.toFixed(1)}:1`;
+    const sample = $('.demo-focus-target') || $('#featuredComponent .ui-button') || $('#featuredComponent *');
+    const readout = $('#contrastValue');
+    if (!sample || !readout) return;
+    const styles = getComputedStyle(sample);
+    const foreground = parseRgb(styles.color);
+    const surface = parseRgb(styles.backgroundColor);
+    if (!foreground) return;
+
+    /* El peor caso de un material translúcido: el mismo tinte sobre blanco y
+       sobre negro. Si el vidrio pide prestada su legibilidad al fondo, uno de
+       los dos cae por debajo de 4.5 y aquí se ve. */
+    const onBlack = flatten([surface], { r: 0, g: 0, b: 0, a: 1 });
+    const onWhite = flatten([surface], { r: 255, g: 255, b: 255, a: 1 });
+    const worst = Math.min(contrastRatio(foreground, onBlack), contrastRatio(foreground, onWhite));
+
+    readout.textContent = `${worst.toFixed(2)}:1`;
+    readout.dataset.pass = String(worst >= 4.5);
+    readout.title = worst >= 4.5
+      ? 'Peor caso sobre fondo blanco y negro. Cumple AA para texto normal.'
+      : 'Peor caso sobre fondo blanco y negro. Por debajo de 4.5:1 — el material necesita más tinte propio.';
   }
 
   function resetAll() {
@@ -794,7 +895,7 @@
         if (input.id === 'lightDirection') $('#miniLight').value = input.value;
         if (input.id === 'motion') $('#miniMotion').value = input.value;
         if (input.id === 'stiffness') $('#miniStiffness').value = input.value;
-        renderRecipe(); updateContrastEstimate(); liquidController?.refreshOptics?.(); liquidRenderer?.touch();
+        renderRecipe(); updateContrastEstimate(); liquidController?.refreshOptics?.(); lensEngine?.invalidate();
       });
     });
 
@@ -833,7 +934,15 @@
     lab.hidden = view !== 'lab'; compare.hidden = view !== 'compare';
     lab.classList.toggle('is-active',view==='lab'); compare.classList.toggle('is-active',view==='compare');
     $$('.view-tab').forEach(button=>{button.classList.toggle('is-active',button.dataset.view===view);button.setAttribute('aria-pressed',String(button.dataset.view===view));});
-    if(view==='compare') renderCompare();
+    /* En Compare hay que quitar el material de <html>: si se queda, sus reglas
+       ganan por especificidad a las de las tarjetas y las tres columnas
+       renderizan el mismo material. Ese fue el motivo de que Compare llevara
+       toda su vida comparando una sola receta consigo misma. */
+    if (view === 'compare') delete root.dataset.mqMaterial;
+    else root.dataset.mqMaterial = state.style;
+    if (view === 'compare') renderCompare();
+    lensEngine?.setEnabled(lensActive());
+    syncLenses();
   }
 
   function setupCommandPalette() {
@@ -859,16 +968,74 @@
     render('');
   }
 
-  function initLiquid() {
-    const canvas = $('#liquidCanvas');
-    liquidRenderer = new window.LiquidRenderer(canvas);
+  /* Superficies que reciben una lente óptica real. La lista es explícita a
+     propósito: registrar todo el DOM cuesta fill-rate sin decir nada nuevo
+     sobre el material. */
+  const LENS_SELECTOR = [
+    '.ui-button', '.ui-card', '.gallery-card', '.switch-control', '.knob',
+    '.field input', '.field textarea', '.field select',
+    '.top-nav-demo', '.sidebar-demo', '.tabs-demo', '.floating-dock', '.segmented-control',
+    '.music-player', '.weather-widget', '.calendar', '.dropdown-menu', '.tooltip-bubble',
+    '.alert', '.notification-item', '.task-item', '.system-toast', '.demo-modal'
+  ].join(',');
+
+  /** Materiales cuya receta usa el motor de lentes. */
+  const LENS_MATERIALS = new Set(['liquid-glass']);
+
+  function lensActive() {
+    return Boolean(lensEngine?.supported)
+      && state.quality === 'full'
+      && (state.view === 'compare' || LENS_MATERIALS.has(state.style));
+  }
+
+  /** Registra las lentes del subárbol cuyo material las usa. */
+  function syncLenses(scope = document) {
+    if (!lensEngine) return;
+    lensEngine.prune();
+    if (!lensActive()) return;
+    for (const element of scope.querySelectorAll(LENS_SELECTOR)) {
+      const host = element.closest('[data-mq-material]');
+      if (!host || !LENS_MATERIALS.has(host.dataset.mqMaterial)) continue;
+      lensEngine.register(element);
+    }
+    lensEngine.touch();
+  }
+
+  /* El controlador de spring nació hablando con el renderer viejo. Este
+     adaptador conserva su API y redirige los impulsos a la lente del elemento
+     concreto, que es lo que permitió sacar la óptica del playground. */
+  function createRendererAdapter() {
+    const impactAt = (clientX, clientY, strength) => {
+      if (!lensEngine || !lensActive()) return;
+      const target = document.elementFromPoint(clientX, clientY)?.closest(LENS_SELECTOR);
+      if (target) lensEngine.impact(target, clientX, clientY, strength);
+      else lensEngine.touch();
+    };
+    return {
+      addRipple: impactAt,
+      pointerMove: () => lensEngine?.touch(),
+      touch: () => lensEngine?.touch(),
+      setAccent: () => {},
+      setQuality: () => lensEngine?.setEnabled(lensActive())
+    };
+  }
+
+  function initEngine() {
+    lensEngine = new window.MorphiqLensEngine();
+    window.MorphiqLensEngineInstance = lensEngine;
+    const ready = lensEngine.mount(document.body);
+    root.dataset.mqBackdrop = 'canvas';
+    if (!ready) {
+      /* Sin WebGL el laboratorio cae al nivel CSS, pero el fondo por canvas se
+         queda: es 2D y funciona en todas partes. */
+      $('#qualitySelect').value = 'fallback';
+    }
+    liquidRenderer = createRendererAdapter();
     liquidController = new window.LiquidSpringController(liquidRenderer);
-    $('#materialStage').addEventListener('pointermove',event=>{ if (state.style === 'liquid-glass') liquidRenderer.pointerMove(event.clientX,event.clientY); },{passive:true});
-    $('#materialStage').addEventListener('pointerdown',event=>{ if (state.style === 'liquid-glass') liquidRenderer.addRipple(event.clientX,event.clientY,1); });
   }
 
   function init() {
-    initLiquid();
+    initEngine();
     bindGlobalControls();
     setupCommandPalette();
     setAccent('#6ae4ff');

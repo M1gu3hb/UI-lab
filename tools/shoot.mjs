@@ -50,6 +50,9 @@ const QUALITY = args.quality ?? 'full';
 const WIDTH = Number(args.width ?? 1600);
 const HEIGHT = Number(args.height ?? 1100);
 const SETTLE = Number(args.settle ?? 700);
+/* Escala 1 por defecto: las capturas del reporte viven en el repo y a 2x pesan
+   cuatro veces mas sin decir nada nuevo sobre el material. */
+const SCALE = Number(args.dsf ?? 1);
 const PAGE_URL = pathToFileURL(resolve(args.page ?? 'dist/index.html')).href;
 
 const SCENE_TARGETS = {
@@ -64,7 +67,7 @@ const SCENE_TARGETS = {
 await mkdir(OUT, { recursive: true });
 
 const browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader'] });
-const page = await browser.newPage({ viewport: { width: WIDTH, height: HEIGHT }, deviceScaleFactor: 2 });
+const page = await browser.newPage({ viewport: { width: WIDTH, height: HEIGHT }, deviceScaleFactor: SCALE });
 
 page.on('pageerror', error => console.error(`  ! pageerror: ${error.message}`));
 page.on('console', message => {
