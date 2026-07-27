@@ -142,14 +142,21 @@
       ]);
       ctx.fillRect(0, horizon, width, height - horizon);
 
-      /* Reflejo del sol: bandas horizontales discretas, no un degradado. */
+      /* Reflejo del sol.
+         Antes esto eran 90 rectangulos agrupados en una columna estrecha bajo
+         el sol: leian como un campo de rayas sueltas, no como un reflejo. El
+         reflejo real se abre en abanico al alejarse de la fuente y se atenua
+         rapido, asi que la dispersion horizontal crece con la distancia al
+         horizonte y la longitud de cada destello con ella. */
       const glints = seeded(31);
-      for (let i = 0; i < 90; i += 1) {
-        const y = horizon + glints() * (height - horizon);
-        const spread = (y - horizon) / (height - horizon);
-        const w = width * (0.02 + spread * 0.14) * (0.4 + glints());
-        ctx.fillStyle = `rgba(255,214,158,${(0.34 * (1 - spread * 0.75)).toFixed(3)})`;
-        ctx.fillRect(sunX - w / 2 + (glints() - 0.5) * width * 0.10 * spread, y, w, 1.6 + spread * 2.4);
+      for (let i = 0; i < 150; i += 1) {
+        const spread = Math.pow(glints(), 0.6);
+        const y = horizon + spread * (height - horizon);
+        const fan = width * (0.03 + spread * 0.34);
+        const x = sunX + (glints() - 0.5) * fan * 2.0;
+        const w = width * (0.012 + spread * 0.05) * (0.35 + glints() * 0.9);
+        ctx.fillStyle = `rgba(255,216,164,${(0.30 * Math.pow(1 - spread, 1.6) + 0.03).toFixed(3)})`;
+        ctx.fillRect(x - w / 2, y, w, 1.2 + spread * 1.6);
       }
       grain(ctx, width, height, 0.04, 9);
     },
@@ -175,11 +182,20 @@
         ctx.fillText(line, width * (index % 2 ? 0.08 : 0.14), y);
       });
 
-      ctx.strokeStyle = 'rgba(120,220,255,.5)';
-      ctx.lineWidth = 3;
-      for (let i = 0; i < 5; i += 1) {
-        ctx.strokeRect(width * (0.55 + i * 0.06), height * (0.1 + i * 0.11), width * 0.3, height * 0.1);
+      /* Los rectangulos cian que habia aqui se leian como UI suelta del
+         laboratorio, no como fondo. Se sustituyen por reglas diagonales, que
+         cumplen la misma funcion — dar al vidrio bordes duros que doblar — sin
+         parecer un control perdido. */
+      ctx.save();
+      ctx.strokeStyle = 'rgba(150,205,255,.28)';
+      ctx.lineWidth = 2;
+      for (let i = -6; i < 22; i += 1) {
+        ctx.beginPath();
+        ctx.moveTo(width * i * 0.07, 0);
+        ctx.lineTo(width * i * 0.07 + height * 0.55, height);
+        ctx.stroke();
       }
+      ctx.restore();
       grain(ctx, width, height, 0.035, 17);
     },
 

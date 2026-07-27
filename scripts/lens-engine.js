@@ -283,6 +283,8 @@
          frame. Con un espejo intermedio se paga una sola, y los recortes por
          elemento pasan a ser copias 2D->2D baratas. */
       this.mirror = document.createElement('canvas');
+      this.mirror.id = 'mqLensUnder';
+      this.mirror.setAttribute('aria-hidden', 'true');
       this.mirrorCtx = null;
 
       /* Canvas GL compartido: fuera del DOM, solo fuente de píxeles. */
@@ -308,6 +310,10 @@
 
     mount(container = document.body) {
       if (!this.backdrop.isConnected) container.prepend(this.backdrop);
+      /* Va después del fondo y antes del contenido: z-index -1 contra el -2 del
+         fondo. Aquí se ven la cáustica y la sombra de contacto de todas las
+         lentes sin que ningún canvas invada la caja de su vecino. */
+      if (!this.mirror.isConnected) this.backdrop.after(this.mirror);
       this.resize();
       return this.initGL();
     }
@@ -410,6 +416,7 @@
     setEnabled(enabled) {
       this.enabled = enabled && this.supported;
       document.documentElement.dataset.mqLens = this.enabled ? 'on' : 'off';
+      this.mirror.style.display = this.enabled ? '' : 'none';
       for (const lens of this.lenses.values()) {
         lens.canvas.style.display = this.enabled ? '' : 'none';
       }
@@ -570,6 +577,12 @@
         const rect = lens.element.getBoundingClientRect();
         if (rect.width < 2 || rect.height < 2) continue;
         if (rect.bottom < -120 || rect.top > this.height + 120) continue;
+        /* La capa compartida no hereda la opacidad del elemento, así que un
+           tooltip con opacity:0 dejaba su vidrio flotando suelto en la página.
+           checkVisibility mira opacidad y visibility además de display. */
+        if (lens.element.checkVisibility && !lens.element.checkVisibility({
+          opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true
+        })) continue;
         if (lens.styleEpoch !== this.epoch || !lens.style) {
           const computed = getComputedStyle(lens.element);
           lens.style = {
@@ -660,8 +673,8 @@
 
       /* Fase de escritura: recorte por elemento desde el espejo. */
       for (const { lens, rect } of jobs) {
-        const width = Math.max(1, Math.round((rect.width + pad * 2 / dpr) * dpr));
-        const height = Math.max(1, Math.round((rect.height + pad * 2 / dpr) * dpr));
+        const width = Math.max(1, Math.round(rect.width * dpr));
+        const height = Math.max(1, Math.round(rect.height * dpr));
         if (lens.width !== width || lens.height !== height) {
           lens.canvas.width = width;
           lens.canvas.height = height;
@@ -676,19 +689,16 @@
            lectura del frame siguiente lo recalculaba entero: un read/write
            thrash a través de frames que costaba más que todo el trabajo de GPU
            junto. Solo se escribe cuando cambia de verdad. */
-        const offset = pad / dpr;
-        const geometry = `${offset}|${rect.width}|${rect.height}`;
+        const geometry = `${rect.width}|${rect.height}`;
         if (lens.geometry !== geometry) {
           lens.geometry = geometry;
-          lens.canvas.style.left = `${-offset}px`;
-          lens.canvas.style.top = `${-offset}px`;
-          lens.canvas.style.width = `${rect.width + offset * 2}px`;
-          lens.canvas.style.height = `${rect.height + offset * 2}px`;
+          lens.canvas.style.width = `${rect.width}px`;
+          lens.canvas.style.height = `${rect.height}px`;
         }
         lens.ctx.clearRect(0, 0, width, height);
         lens.ctx.drawImage(
           source,
-          Math.round(rect.left * dpr - pad), Math.round(rect.top * dpr - pad), width, height,
+          Math.round(rect.left * dpr), Math.round(rect.top * dpr), width, height,
           0, 0, width, height
         );
       }

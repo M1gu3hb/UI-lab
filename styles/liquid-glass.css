@@ -103,6 +103,7 @@
    garantiza que nada sangre sobre el contenido. */
 .mq-lens {
   position: absolute;
+  inset: 0;
   z-index: -1;
   display: block;
   border-radius: inherit;

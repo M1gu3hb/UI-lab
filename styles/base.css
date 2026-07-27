@@ -484,9 +484,25 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
    es más ancho que el elemento. Al recortarlo, la óptica salía comprimida en
    horizontal y aparecía una costura vertical dentro del control. */
 .mq-lens,
+#mqLensUnder,
 #mqBackdrop {
   max-width: none;
   max-height: none;
+}
+
+/* Capa donde viven los efectos que salen de la silueta: cáustica y sombra de
+   contacto. Antes cada control llevaba 34px de margen en su propio canvas para
+   dibujarlos, y ese margen tapaba a sus vecinos — la etiqueta «Switch» se leía
+   «itch». Sacarlos a una capa compartida detrás del contenido lo resuelve sin
+   perder el efecto. */
+#mqLensUnder {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 #mqBackdrop {
@@ -531,3 +547,9 @@ html[data-mq-backdrop="canvas"] body { background: transparent; }
 .token-row--contract dt small { color: var(--muted); font-size: .64rem; font-variant-numeric: tabular-nums; }
 .token-row--contract dd p { margin: 3px 0 0; color: var(--muted); font-size: .68rem; line-height: 1.35; }
 .token-note { color: var(--muted); font-size: .72rem; }
+
+/* Compare: un único fondo para las tres columnas.
+   Cada material pintaba su propio escenario, así que las tres tarjetas se
+   comparaban sobre fondos distintos y la prueba no discriminaba: parte de la
+   diferencia que se veía era del fondo, no del material. */
+.compare-card__stage { background: transparent; }

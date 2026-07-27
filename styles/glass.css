@@ -86,7 +86,6 @@ html[data-style="glass"][data-variant="experimental"] { --material-opacity: .15;
 html[data-style="glass"][data-variant="experimental"] .glass-surface,
 html[data-style="glass"][data-variant="experimental"] .ui-card { background: linear-gradient(145deg, rgba(255,255,255,.18), transparent 38%), linear-gradient(90deg, rgba(var(--accent-rgb),.08), rgba(123,84,255,.08)), rgba(9,20,39,.16); }
 
-[data-style-scope="glass"] .compare-card__stage { background:radial-gradient(circle at 25% 20%,#6549ff,transparent 26%),radial-gradient(circle at 75% 25%,#12d8c4,transparent 27%),linear-gradient(145deg,#091226,#231248);color:#fff; }
 [data-style-scope="glass"] .ui-button,
 [data-style-scope="glass"] .player-controls button { color:#fff;background:linear-gradient(135deg,rgba(255,255,255,.22),transparent),rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.32);box-shadow:0 9px 22px rgba(2,8,18,.2),inset 0 1px rgba(255,255,255,.25);backdrop-filter:blur(18px); }
 [data-style-scope="glass"] .switch-control { background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.24);backdrop-filter:blur(16px); }

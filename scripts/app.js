@@ -973,7 +973,12 @@
      sobre el material. */
   const LENS_SELECTOR = [
     '.ui-button', '.ui-card', '.gallery-card', '.switch-control', '.knob',
-    '.field input', '.field textarea', '.field select',
+    /* `.field input` a secas capturaba los dos <input type=range> del range
+       slider, que están superpuestos con inset:0: dos lentes apiladas en el
+       mismo sitio y una silueta redondeada huérfana debajo del control. Los
+       inputs que no son cajas de texto no son superficies de material. */
+    '.field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color])',
+    '.field textarea', '.field select',
     '.top-nav-demo', '.sidebar-demo', '.tabs-demo', '.floating-dock', '.segmented-control',
     '.music-player', '.weather-widget', '.calendar', '.dropdown-menu', '.tooltip-bubble',
     '.alert', '.notification-item', '.task-item', '.system-toast', '.demo-modal'
