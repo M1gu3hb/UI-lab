@@ -984,6 +984,17 @@
     '.alert', '.notification-item', '.task-item', '.system-toast', '.demo-modal'
   ].join(',');
 
+  /* Grupos de fusión: contenedor -> selector de miembros.
+     El motor combina el contenedor y sus miembros con smooth-minimum, y añade
+     una gota de estela cuando un miembro se mueve. Es donde se ve la física:
+     el puente se forma, se estira y se rompe. */
+  const LENS_GROUPS = [
+    ['.switch-control', '.switch-thumb'],
+    ['.segmented-control', '.segmented-indicator'],
+    ['.custom-slider', '.slider-thumb'],
+    ['.demo-dropdown', '.dropdown-trigger, .dropdown-menu.is-open']
+  ];
+
   /** Materiales cuya receta usa el motor de lentes. */
   const LENS_MATERIALS = new Set(['liquid-glass']);
 
@@ -1002,6 +1013,13 @@
       const host = element.closest('[data-mq-material]');
       if (!host || !LENS_MATERIALS.has(host.dataset.mqMaterial)) continue;
       lensEngine.register(element);
+    }
+    for (const [container, members] of LENS_GROUPS) {
+      for (const element of scope.querySelectorAll(container)) {
+        const host = element.closest('[data-mq-material]');
+        if (!host || !LENS_MATERIALS.has(host.dataset.mqMaterial)) continue;
+        lensEngine.register(element, members);
+      }
     }
     lensEngine.touch();
   }

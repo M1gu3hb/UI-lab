@@ -52,7 +52,7 @@
     }
   `;
 
-  const FRAGMENT = `
+  const PRELUDE = `
     precision highp float;
 
     varying vec2 v_local;
@@ -149,6 +149,9 @@
       return mix(sharp, texture2D(u_blurred, uv).rgb, clamp(frost, 0.0, 1.0));
     }
 
+  `;
+
+  const MAIN = `
     void main() {
       vec2 p = v_local;
 
@@ -156,7 +159,7 @@
          el camino óptico significa más distorsión — no es un truco de brillo. */
       float thickness = u_thickness * (1.0 + u_pressure * 0.85);
 
-      vec3 field = squircleField(p, u_half, u_radius, u_exp);
+      vec3 field = shapeField(p);
       float sd = field.x;
       vec2 gradient = field.yz;
 
@@ -300,11 +303,61 @@
     }
   `;
 
+  const MAX_SHAPES = 4;
+
+  /* Camino rápido: una sola forma. Es el 95% del tiempo — la fusión es un
+     estado transitorio — así que no puede pagar el bucle sobre N formas. */
+  const FIELD_SINGLE = `
+    vec3 shapeField(vec2 p) {
+      return squircleField(p, u_half, u_radius, u_exp);
+    }
+  `;
+
+  /* Camino de fusión: hasta MAX_SHAPES formas combinadas con smooth-minimum.
+     Se toma el mínimo suave de DISTANCIAS CON SIGNO, no la suma de campos de
+     influencia: el resultado sigue siendo una distancia, así que sirve para
+     derivar normales del campo YA FUSIONADO. Eso es lo que hace que el rim
+     recorra el puente de forma continua — y es la diferencia entre "dos formas
+     que se tocan" y "dos gotas que se unen". */
+  const FIELD_GROUP = `
+    uniform vec4 u_shapes[${MAX_SHAPES}];      /* centro.xy, medio tamaño.xy */
+    uniform vec3 u_shapeMeta[${MAX_SHAPES}];   /* radio, exponente, peso */
+    uniform float u_k;                     /* radio de mezcla, en px */
+    uniform int u_shapeCount;
+
+    /* Polinómica de Inigo Quilez. Nunca sobrepasa min(), y devuelve además el
+       factor de mezcla para interpolar la normal a través del puente. */
+    vec3 smin3(vec3 a, vec3 b, float k) {
+      float h = max(k - abs(a.x - b.x), 0.0) / max(k, 1e-4);
+      float m = h * h * 0.5;
+      float s = m * k * 0.5;
+      if (a.x < b.x) return vec3(a.x - s, mix(a.yz, b.yz, m));
+      return vec3(b.x - s, mix(b.yz, a.yz, m));
+    }
+
+    vec3 shapeField(vec2 p) {
+      vec3 acc = vec3(1e6, 0.0, -1.0);
+      for (int i = 0; i < ${MAX_SHAPES}; i += 1) {
+        if (i >= u_shapeCount) break;
+        vec4 shape = u_shapes[i];
+        vec3 meta = u_shapeMeta[i];
+        vec3 field = squircleField(p - shape.xy, shape.zw, meta.x, meta.y);
+        /* Poda exacta: con smin polinómico una forma a más de k de distancia no
+           contribuye nada. No es una aproximación. */
+        if (field.x - acc.x > u_k && i > 0) continue;
+        acc = (i == 0) ? field : smin3(acc, field, u_k);
+      }
+      return acc;
+    }
+  `;
+
   const UNIFORM_NAMES = [
     'u_viewport', 'u_rect', 'u_pad', 'u_backdrop', 'u_half', 'u_radius', 'u_thickness',
     'u_refraction', 'u_dispersion', 'u_specular', 'u_frost', 'u_blurred', 'u_lightAngle', 'u_lightIntensity',
     'u_body', 'u_lit', 'u_pressure', 'u_caustic', 'u_iri', 'u_impact', 'u_flat', 'u_exp', 'u_profile', 'u_dome'
   ];
+
+  const GROUP_UNIFORM_NAMES = [...UNIFORM_NAMES, 'u_k', 'u_shapeCount'];
 
   function compile(gl, type, source) {
     const shader = gl.createShader(type);
@@ -450,13 +503,26 @@
         });
         if (!gl) return false;
 
-        const program = gl.createProgram();
-        gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VERTEX));
-        gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, FRAGMENT));
-        gl.linkProgram(program);
-        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-          throw new Error(gl.getProgramInfoLog(program));
-        }
+        /* Dos programas con el mismo main y distinto campo de forma. El camino
+           de una sola forma no paga el bucle sobre N ni los uniforms de grupo:
+           la fusión es transitoria y el reposo es la mayor parte del tiempo. */
+        const build = (fieldSource, names) => {
+          const program = gl.createProgram();
+          gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VERTEX));
+          gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, PRELUDE + fieldSource + MAIN));
+          gl.linkProgram(program);
+          if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            throw new Error(gl.getProgramInfoLog(program));
+          }
+          const uniforms = {};
+          for (const name of names) uniforms[name] = gl.getUniformLocation(program, name);
+          for (let i = 0; i < MAX_SHAPES; i += 1) {
+            uniforms[`u_shapes[${i}]`] = gl.getUniformLocation(program, `u_shapes[${i}]`);
+            uniforms[`u_shapeMeta[${i}]`] = gl.getUniformLocation(program, `u_shapeMeta[${i}]`);
+          }
+          const attribute = gl.getAttribLocation(program, 'a_unit');
+          return { program, uniforms, attribute };
+        };
 
         const buffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -464,9 +530,9 @@
           -1, -1, 1, -1, -1, 1,
           -1, 1, 1, -1, 1, 1
         ]), gl.STATIC_DRAW);
-        const attribute = gl.getAttribLocation(program, 'a_unit');
-        gl.enableVertexAttribArray(attribute);
-        gl.vertexAttribPointer(attribute, 2, gl.FLOAT, false, 0, 0);
+
+        this.single = build(FIELD_SINGLE, UNIFORM_NAMES);
+        this.group = build(FIELD_GROUP, GROUP_UNIFORM_NAMES);
 
         const makeTexture = () => {
           const texture = gl.createTexture();
@@ -482,19 +548,29 @@
 
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-        gl.useProgram(program);
 
         this.gl = gl;
-        this.program = program;
-        for (const name of UNIFORM_NAMES) {
-          this.uniforms[name] = gl.getUniformLocation(program, name);
-        }
+        this.buffer = buffer;
+        this.useProgram(this.single);
         return true;
       } catch (error) {
         console.warn('LensEngine: WebGL no disponible, el laboratorio usa el nivel CSS.', error);
         this.gl = null;
         return false;
       }
+    }
+
+    /** Cambia de programa y reengancha el atributo de vértice. */
+    useProgram(bundle) {
+      const gl = this.gl ?? this.glCanvas.getContext('webgl');
+      if (!gl || this.active === bundle) return bundle;
+      gl.useProgram(bundle.program);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+      gl.enableVertexAttribArray(bundle.attribute);
+      gl.vertexAttribPointer(bundle.attribute, 2, gl.FLOAT, false, 0, 0);
+      this.active = bundle;
+      this.uniforms = bundle.uniforms;
+      return bundle;
     }
 
     get supported() {
@@ -573,8 +649,12 @@
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.blurred);
     }
 
-    register(element) {
-      if (this.lenses.has(element)) return;
+    register(element, members = null) {
+      const existing = this.lenses.get(element);
+      if (existing) {
+        if (members && existing.members !== members) existing.members = members;
+        return;
+      }
       const canvas = document.createElement('canvas');
       canvas.className = 'mq-lens';
       canvas.setAttribute('aria-hidden', 'true');
@@ -591,6 +671,8 @@
         styleEpoch: -1,
         geometry: '',
         shown: null,
+        members,
+        trails: new Map(),
         impact: { x: 0, y: 0, time: -10, strength: 0 }
       };
       /* Los estados que cambian tokens --mq-* son transiciones discretas, no
@@ -691,6 +773,7 @@
 
       /* Fase de lectura: todos los rects y tokens de una vez. Ninguna escritura
          puede colarse aquí o el navegador recalcula layout N veces por frame. */
+      let alive = false;
       const jobs = [];
       for (const lens of this.lenses.values()) {
         if (!lens.visible || !lens.element.isConnected) continue;
@@ -738,7 +821,87 @@
         /* La presión la escribe el controlador de spring en el style inline, así
            que se lee sin pasar por getComputedStyle. */
         const pressure = number(lens.element.style.getPropertyValue('--liquid-pressure'), 0);
-        jobs.push({ lens, rect, style: lens.style, pressure });
+
+        /* Grupos: se leen los rects de los miembros y se decide si hay fusión.
+           k es el radio de mezcla, en las mismas unidades que el SDF — píxeles —
+           así que se anima directamente desde el estado de la interfaz. */
+        let shapes = null;
+        let k = 0;
+        if (lens.members) {
+          shapes = [{
+            cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2,
+            hw: rect.width / 2, hh: rect.height / 2,
+            radius: lens.style.radius
+          }];
+          for (const member of lens.element.querySelectorAll(lens.members)) {
+            const box = member.getBoundingClientRect();
+            if (box.width < 1 || box.height < 1) continue;
+            const memberStyle = getComputedStyle(member);
+            shapes.push({
+              cx: box.left + box.width / 2, cy: box.top + box.height / 2,
+              hw: box.width / 2, hh: box.height / 2,
+              radius: resolveRadius(memberStyle.borderTopLeftRadius, box.width, box.height)
+            });
+            /* La estela: si el miembro se movió desde el frame anterior, se
+               añade una gota en la posición previa. El movimiento genera la
+               gota — no hace falta un elemento fantasma en el DOM. */
+            const previous = lens.trails.get(member);
+            const cx = box.left + box.width / 2;
+            const cy = box.top + box.height / 2;
+            if (previous) {
+              const travel = Math.hypot(cx - previous.cx, cy - previous.cy);
+              /* Umbral, no interpolación desde infinito: por debajo de esta
+                 distancia no pasa nada. Y k crece con la velocidad, así que un
+                 control que se acerca despacio no se funde y uno que llega
+                 rápido sí. */
+              if (travel > 1.5) {
+                previous.energy = Math.min(1, previous.energy + travel / 26);
+                shapes.push({ cx: previous.cx, cy: previous.cy, hw: box.width / 2, hh: box.height / 2, radius: previous.radius ?? 0 });
+                k = Math.max(k, Math.min(30, travel * 1.6));
+              }
+              previous.energy *= 0.82;
+              if (previous.energy > 0.02) k = Math.max(k, previous.energy * 26);
+              previous.cx += (cx - previous.cx) * 0.28;
+              previous.cy += (cy - previous.cy) * 0.28;
+            } else {
+              lens.trails.set(member, { cx, cy, energy: 0, radius: resolveRadius(memberStyle.borderTopLeftRadius, box.width, box.height) });
+            }
+          }
+          k = Math.max(k, number(lens.element.style.getPropertyValue('--mq-k'), 0));
+          shapes = shapes.slice(0, MAX_SHAPES);
+
+          /* Puerta del camino de grupo.
+             La fusión es un estado transitorio: el reposo es el 95% del tiempo.
+             Sin energía de mezcla el grupo cae al camino de una sola forma, que
+             no paga el bucle sobre N formas ni ensancha el quad. Es el punto
+             del presupuesto de rendimiento y además evita que el programa de
+             grupo altere el aspecto en reposo. */
+          if (k < 1.5 || shapes.length < 2) {
+            shapes = null;
+            k = 0;
+          } else {
+            alive = true;
+
+            /* El quad cubre la unión de las formas más el radio de mezcla: un
+               menú nace fuera de la caja de su disparador, y el puente de
+               fusión se dibuja entre las dos. */
+            let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+            for (const shape of shapes) {
+              left = Math.min(left, shape.cx - shape.hw);
+              top = Math.min(top, shape.cy - shape.hh);
+              right = Math.max(right, shape.cx + shape.hw);
+              bottom = Math.max(bottom, shape.cy + shape.hh);
+            }
+            const slack = k * 0.75;
+            rect = {
+              left: left - slack, top: top - slack,
+              width: (right - left) + slack * 2, height: (bottom - top) + slack * 2,
+              right: right + slack, bottom: bottom + slack
+            };
+          }
+        }
+
+        jobs.push({ lens, rect, style: lens.style, pressure, shapes, k });
       }
 
       const gl = this.gl;
@@ -747,20 +910,46 @@
 
       const dpr = this.scale;
       const pad = Math.round(34 * dpr);
-      let alive = false;
 
-      gl.uniform2f(this.uniforms.u_viewport, this.glCanvas.width, this.glCanvas.height);
-      gl.uniform1i(this.uniforms.u_backdrop, 0);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, this.texture);
-      gl.uniform1i(this.uniforms.u_blurred, 1);
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, this.blurTexture);
-      gl.uniform1f(this.uniforms.u_pad, pad);
-      gl.uniform1f(this.uniforms.u_lightAngle, this.tokens.lightAngle);
-      gl.uniform1f(this.uniforms.u_lightIntensity, this.tokens.lightIntensity);
+      const applyShared = () => {
+        gl.uniform2f(this.uniforms.u_viewport, this.glCanvas.width, this.glCanvas.height);
+        gl.uniform1i(this.uniforms.u_backdrop, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        gl.uniform1i(this.uniforms.u_blurred, 1);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.blurTexture);
+        gl.uniform1f(this.uniforms.u_pad, pad);
+        gl.uniform1f(this.uniforms.u_lightAngle, this.tokens.lightAngle);
+        gl.uniform1f(this.uniforms.u_lightIntensity, this.tokens.lightIntensity);
+      };
 
-      for (const { lens, rect, style, pressure } of jobs) {
+      /* Se agrupan los jobs por programa: cambiar de programa por elemento
+         costaría más que el propio dibujo. */
+      const ordered = [...jobs.filter(job => !job.shapes), ...jobs.filter(job => job.shapes)];
+      let current = null;
+
+      for (const { lens, rect, style, pressure, shapes, k } of ordered) {
+        const bundle = shapes ? this.group : this.single;
+        if (bundle !== current) {
+          this.useProgram(bundle);
+          applyShared();
+          current = bundle;
+        }
+        if (shapes) {
+          gl.uniform1i(this.uniforms.u_shapeCount, shapes.length);
+          gl.uniform1f(this.uniforms.u_k, Math.max(k, 0.001) * dpr);
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          for (let i = 0; i < MAX_SHAPES; i += 1) {
+            const shape = shapes[Math.min(i, shapes.length - 1)];
+            gl.uniform4f(this.uniforms[`u_shapes[${i}]`],
+              (shape.cx - cx) * dpr, (shape.cy - cy) * dpr, shape.hw * dpr, shape.hh * dpr);
+            const maxR = Math.min(shape.hw, shape.hh);
+            const rr = Math.min(shape.radius, maxR);
+            gl.uniform3f(this.uniforms[`u_shapeMeta[${i}]`], rr * dpr, rr >= maxR - 1 ? 2 : 4, 1);
+          }
+        }
         const radius = style.radius * dpr;
         /* Grosor acoplado al tamaño.
            Apple lo dice explícitamente: al crecer, un elemento de Liquid Glass
@@ -877,5 +1066,9 @@
 
   window.MorphiqLensEngine = LensEngine;
   /* El Recipe Inspector muestra este shader en la pestaña "Shader". */
-  window.MorphiqLensShader = { vertexSource: VERTEX, fragmentSource: FRAGMENT };
+  window.MorphiqLensShader = {
+    vertexSource: VERTEX,
+    fragmentSource: PRELUDE + FIELD_SINGLE + MAIN,
+    groupSource: PRELUDE + FIELD_GROUP + MAIN
+  };
 })();
