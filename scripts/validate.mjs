@@ -48,7 +48,6 @@ const SHELL_FILES = [
   'styles/base.css',
   'scripts/app.js',
   'scripts/backdrops.js',
-  'scripts/lens-engine.js',
   'scripts/build.mjs',
   'scripts/validate.mjs'
 ];

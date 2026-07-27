@@ -140,41 +140,12 @@
         </fieldset>
 
         <fieldset>
-          <legend>Óptica y física</legend>
-          <label>Refracción <output for="refraction">32%</output>
-            <input id="refraction" data-token="--material-refraction" type="range" min="0" max="100" value="32" />
-          </label>
-          <label>Dispersión cromática <output for="dispersion">8%</output>
-            <input id="dispersion" data-token="--material-dispersion" type="range" min="0" max="30" value="8" />
-          </label>
-          <label>Fuerza de onda <output for="ripple">48%</output>
-            <input id="ripple" data-token="--ripple-intensity" type="range" min="0" max="100" value="48" />
-          </label>
-          <label>Brillo de ondas <output for="waveBrightness">20%</output>
-            <input id="waveBrightness" data-token="--ripple-brightness" type="range" min="0" max="100" value="20" />
-          </label>
-          <label>Cantidad de ondas <output for="waveCount">2</output>
-            <input id="waveCount" data-token="--ripple-count" type="range" min="1" max="6" step="1" value="2" />
-          </label>
-          <label>Elasticity <output for="elasticity">56%</output>
-            <input id="elasticity" data-token="--motion-elasticity" type="range" min="0" max="100" value="56" />
-          </label>
-          <label>Stiffness <output for="stiffness">260</output>
-            <input id="stiffness" data-token="--motion-stiffness" type="range" min="80" max="520" value="260" />
-          </label>
-          <label>Damping <output for="damping">24</output>
-            <input id="damping" data-token="--motion-damping" type="range" min="8" max="48" value="24" />
-          </label>
-          <label>Stretch limit <output for="stretch">12%</output>
-            <input id="stretch" data-token="--stretch-limit" type="range" min="0" max="30" value="12" />
-          </label>
-          <label>Motion intensity <output for="motion">70%</output>
-            <input id="motion" data-token="--motion-intensity" type="range" min="0" max="100" value="70" />
-          </label>
-        </fieldset>
-
-        <fieldset>
+          <!-- Las perillas de refracción, dispersión, ondas y spring se
+               eliminaron con el motor WebGL: eran parámetros de un shader que
+               ya no existe. Un inspector con perillas muertas es peor que uno
+               corto. Lo que queda son las que el material usa de verdad. -->
           <legend>Rendimiento y accesibilidad</legend>
+
           <label class="toggle-row"><span>Reduced motion</span>
             <input id="reducedMotion" type="checkbox" role="switch" />
           </label>
@@ -355,6 +326,16 @@
   <div id="toastRegion" class="toast-region" role="region" aria-live="polite" aria-label="Notificaciones"></div>
 
   <svg width="0" height="0" aria-hidden="true" focusable="false">
+    <!-- Turbulencia del vidrio. Va dentro del backdrop-filter (ver
+         styles/liquid-glass.css): fuera, url() actúa sobre los píxeles del
+         propio elemento y el elemento está vacío.
+         baseFrequency y scale están recalibrados a la baja respecto a los
+         valores publicados (0.008 / 77), que estaban pensados para un filter
+         decorativo y aquí distorsionaban de más. -->
+    <filter id="mq-glass-distortion" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="turbulence" baseFrequency="0.006" numOctaves="2" seed="7" result="noise" />
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="28" xChannelSelector="R" yChannelSelector="G" />
+    </filter>
     <filter id="filmGrain" x="0" y="0" width="100%" height="100%">
       <!-- numOctaves por encima de 4 no aporta y cuesta; un baseFrequency
            entero devuelve blanco liso. -->
@@ -374,7 +355,6 @@
   </svg>
 
   <script src="scripts/backdrops.js" defer></script>
-  <script src="scripts/lens-engine.js" defer></script>
   <script src="scripts/skeuo.js" defer></script>
   <script src="scripts/glass.js" defer></script>
   <script src="scripts/liquid-glass.js" defer></script>

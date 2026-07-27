@@ -573,3 +573,9 @@ html[data-mq-backdrop="canvas"] body { background: transparent; }
 @media (prefers-reduced-transparency: reduce) {
   .grain-layer { display: none; }
 }
+
+/* Pista del indicador que viaja. Los seis componentes de navegación comparten
+   patrón, así que comparten contenedor. */
+.mq-nav-track { position: relative; }
+.mq-nav-track > .mq-indicator { top: 0; left: 0; }
+.mq-nav-track > button { position: relative; z-index: 2; }

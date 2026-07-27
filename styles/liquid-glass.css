@@ -2,67 +2,56 @@
    Liquid Glass — receta de material
    ==========================================================================
 
-   Qué separa este material de `glass`: la misma óptica, pero viva. `glass` es
-   una lámina rígida y pulida; esto es vidrio con espesor que se comporta como
-   líquido bajo presión. No es una capa de agua encima de un botón — lo que
-   separa vidrio de agua es el índice de refracción alto, el canto sólido y el
-   specular duro y compacto. El agua difumina; el vidrio dobla y corta.
+   REINICIO. La versión anterior era un motor WebGL de ~1.100 líneas que
+   muestreaba el fondo como textura y resolvía la óptica en un shader. Se
+   eliminó entera. Todos los defectos que se fueron rechazando eran suyos y de
+   su arquitectura, no ajustes pendientes: el recuadro fantasma (padding fijo
+   contra un decaimiento de 118px), los puntitos (ruido dentro de la textura que
+   la propia lente magnificaba), el vidrio sobre vidrio, el facetado, la costura
+   en X del knob, los 125 ms por frame.
 
-   Dónde vive cada cosa:
-   - El espesor, la refracción de borde, el specular direccional, la dispersión
-     del canto y la cáustica los calcula scripts/lens-engine.js sobre la textura
-     real del fondo. Aquí se declaran los tokens que lo alimentan.
-   - Este archivo sostiene por sí solo los niveles balanced y fallback: sin
-     WebGL el material sigue siendo vidrio con canto, no una versión rota.
+   Ninguno de esos problemas puede existir aquí, porque aquí no hay ni textura
+   ni lienzo propio: el navegador compone el fondo y nosotros solo lo filtramos.
 
-   Auto-contención: cero :root, cada var() con fallback literal. Pegar el bloque
-   de un componente en un HTML vacío reproduce el material.
+   ARQUITECTURA — tres capas, cero JS obligatorio
+     1. filtro     · backdrop-filter sobre lo que hay detrás
+     2. overlay    · tinte propio del material
+     3. especular  · filo de luz en el canto
+     4. contenido  · en el flujo normal, POR ENCIMA de las tres
 
-   El selector raíz es [data-mq-material="liquid-glass"], y ese atributo puede
-   estar en <html> (vista Laboratorio) o en una tarjeta de Compare. Un único
-   juego de reglas sirve a las dos vistas: por eso Compare muestra el material
-   completo y no un subconjunto mantenido a mano.
+   Las capas 1 y 2 viven en ::before y la 3 en ::after, así que ningún
+   componente necesita divs extra: la galería conserva su markup. El contenido
+   nunca entra en la capa filtrada por construcción — que es lo que hacía falta
+   para que el texto no arrastre halo.
+
+   Auto-contención: cero :root, cada var() con fallback literal.
    ========================================================================== */
 
 [data-mq-material="liquid-glass"] {
-  /* ---- Contrato --mq-*: lo que se congela al inyectar en Morphiq UI ------ */
-  /* El alfa del cuerpo es la palanca del gate de contraste.
-     En el round 1 el gate se medía en absoluto — sobre blanco y sobre negro —
-     y eso forzaba alfa .76, con lo que el shader solo dejaba pasar el 22% de la
-     imagen refractada: el material dejaba de leer como vidrio. Con el gate
-     medido por tono, el cuerpo recupera transparencia y el contraste lo sostiene
-     la receta del tono correspondiente. Es la misma resolución que aplicó Apple
-     entre iOS 26 y 27: cuerpo más manejable, canto más fuerte. */
-  --mq-body: rgba(12, 29, 50, 0.42);   /* cuerpo del vidrio: color + cuánto tiñe */
-  --mq-lit: #cfeeff;                   /* highlight del canto orientado a la luz */
-  --mq-edge: rgba(3, 12, 26, 0.62);    /* canto inferior y profundidad al presionar */
-  --mq-text: #f2fbff;
-  --mq-brd: rgba(196, 232, 255, 0.44);
-  --mq-ring: rgba(120, 224, 255, 0.85);
-  --mq-halo: rgba(2, 8, 18, 0.92);   /* halo del texto sin superficie propia */
+  /* ---- Contrato --mq-* ---------------------------------------------------- */
+  --mq-body: rgba(255, 255, 255, 0.25);   /* tinte del overlay */
+  --mq-lit: rgba(255, 255, 255, 0.75);    /* filo especular del canto */
+  --mq-edge: rgba(255, 255, 255, 0.12);   /* canto inferior / profundidad al presionar */
+  --mq-text: #ffffff;
+  --mq-brd: rgba(255, 255, 255, 0.28);
+  --mq-ring: rgba(150, 225, 255, 0.9);
+  --mq-halo: rgba(2, 8, 18, 0.9);         /* halo del texto sin superficie propia */
 
-  /* ---- Tokens propios del material -------------------------------------- */
-  --mq-thick: 8px;          /* SUELO del canto en px. El espesor real se deriva del tamaño
-                               del control (20% del lado corto, tope 34px): un vidrio de 4px es
-                               ópticamente correcto y visualmente inexistente */
-  --mq-iri: 0.16;           /* irisación del canto, 0–0.4. Sobre 0.25 se vuelve jabón */
-  --mq-caustic: 0.62;       /* charco de luz proyectado bajo el cuerpo, 0–1 */
-  --mq-flat: 0;             /* 0 = líquido deformable · 1 = lámina rígida */
-  --mq-blur-scale: 0.55;    /* el vidrio dobla más de lo que difumina */
-  --mq-thick-scale: 1;      /* multiplicador del grosor, además del acoplado al tamaño */
-  --mq-profile: 2.4;        /* k del perfil de espesor: 2 = bisel circular, 4 = squircle de Apple */
-  --mq-dome: 0.62;          /* curvatura de cúpula sobre toda la superficie, 0–1. Es lo que hace
-                               que el fondo se doble también lejos del canto, no solo en el filo */
+  /* ---- Tokens propios del material ---------------------------------------- */
+  --mq-blur: 4px;          /* desenfoque del backdrop. 2–14px */
+  --mq-saturate: 120%;     /* el blur desatura por construcción; esto lo compensa */
+  --mq-brightness: 1.15;   /* levanta el vidrio sobre fondos oscuros */
   --mq-radius: 18px;
+  --mq-shadow: 0 8px 24px -10px rgba(2, 10, 24, 0.55);
 
-  color: var(--mq-text, #f2fbff);
+  color: var(--mq-text, #ffffff);
 }
 
 /* ==========================================================================
    Superficie base
    ========================================================================== */
 
-[data-mq-material="liquid-glass"] .mq-surface,
+[data-mq-material="liquid-glass"] .mq-glass,
 [data-mq-material="liquid-glass"] .ui-button,
 [data-mq-material="liquid-glass"] .ui-card,
 [data-mq-material="liquid-glass"] .switch-control,
@@ -85,159 +74,174 @@
 [data-mq-material="liquid-glass"] .system-toast,
 [data-mq-material="liquid-glass"] .task-item,
 [data-mq-material="liquid-glass"] .drop-zone,
+[data-mq-material="liquid-glass"] .progress-track,
 [data-mq-material="liquid-glass"] .demo-modal {
   position: relative;
-  /* El canvas de la lente es un hijo con z-index negativo. Sin este contexto
-     de apilamiento se escaparía por debajo del ancestro y sangraría sobre el
-     contenido de otros controles — que es exactamente el halo borroso que
-     arrastraba el texto de los inputs. */
   isolation: isolate;
-  border: 1px solid var(--mq-brd, rgba(196, 232, 255, 0.44));
+  border: 0;
   border-radius: var(--mq-radius, 18px);
-  color: var(--mq-text, #f2fbff);
-  background: var(--mq-body, rgba(12, 29, 50, 0.42));
-  box-shadow:
-    0 1px 0 0 rgba(255, 255, 255, 0.22) inset,
-    0 -1px 0 0 var(--mq-edge, rgba(3, 12, 26, 0.62)) inset,
-    0 12px 30px -12px rgba(2, 10, 24, 0.72);
-  transition:
-    border-color 180ms ease,
-    box-shadow 180ms ease,
-    background-color 180ms ease;
-}
-
-/* El canvas de la lente. Nunca lleva filter ni mix-blend-mode: todo el
-   desenfoque ocurre dentro del shader, sobre la textura del fondo. Es lo que
-   garantiza que nada sangre sobre el contenido. */
-.mq-lens {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  display: block;
-  border-radius: inherit;
-  pointer-events: none;
-}
-
-/* Con el motor activo el color de fondo estorba: el cuerpo del vidrio lo pinta
-   el shader, con el tinte ya incorporado. */
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .ui-button,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .ui-card,
-html[data-mq-lens="on"] html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .switch-control,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .knob,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .field textarea,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .field select,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .top-nav-demo,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .sidebar-demo,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .tabs-demo,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .floating-dock,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .segmented-control,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .music-player,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .weather-widget,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .calendar,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .dropdown-menu,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .tooltip-bubble,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .system-toast,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .alert,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .notification-item,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .task-item,
-html[data-mq-lens="on"] [data-mq-material="liquid-glass"] .demo-modal {
   background: transparent;
+  color: var(--mq-text, #ffffff);
+  box-shadow: var(--mq-shadow, 0 8px 24px -10px rgba(2, 10, 24, 0.55));
 }
 
-/* ==========================================================================
-   Niveles balanced y fallback — el material sin WebGL
-   ==========================================================================
-   Aquí no hay refracción real, así que el canto se construye con gradientes.
-   Sigue habiendo espesor, luz direccional y bisel: un vidrio defendible por sí
-   solo, no una versión degradada. Es lo que ve la mitad de los usuarios de
-   Safari. */
-
-html:not([data-mq-lens="on"]) [data-mq-material="liquid-glass"] .ui-button::after,
-html:not([data-mq-lens="on"]) [data-mq-material="liquid-glass"] .ui-card::after,
-html:not([data-mq-lens="on"]) [data-mq-material="liquid-glass"] .floating-dock::after,
-html:not([data-mq-lens="on"]) [data-mq-material="liquid-glass"] .switch-control::after {
+/* Capa 1 + 2: filtro del backdrop y tinte.
+   Van juntas en ::before porque con la turbulencia dentro del backdrop-filter
+   ya no hay motivo para separarlas — en el snippet original estaban separadas
+   porque `filter: url()` sobre la capa habría teñido también el overlay. */
+[data-mq-material="liquid-glass"] .mq-glass::before,
+[data-mq-material="liquid-glass"] .ui-button::before,
+[data-mq-material="liquid-glass"] .ui-card::before,
+[data-mq-material="liquid-glass"] .switch-control::before,
+[data-mq-material="liquid-glass"] .knob::before,
+[data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color])::before,
+[data-mq-material="liquid-glass"] .field textarea::before,
+[data-mq-material="liquid-glass"] .top-nav-demo::before,
+[data-mq-material="liquid-glass"] .sidebar-demo::before,
+[data-mq-material="liquid-glass"] .tabs-demo::before,
+[data-mq-material="liquid-glass"] .floating-dock::before,
+[data-mq-material="liquid-glass"] .segmented-control::before,
+[data-mq-material="liquid-glass"] .music-player::before,
+[data-mq-material="liquid-glass"] .weather-widget::before,
+[data-mq-material="liquid-glass"] .calendar::before,
+[data-mq-material="liquid-glass"] .dropdown-menu::before,
+[data-mq-material="liquid-glass"] .tooltip-bubble::before,
+[data-mq-material="liquid-glass"] .alert::before,
+[data-mq-material="liquid-glass"] .notification-item::before,
+[data-mq-material="liquid-glass"] .system-toast::before,
+[data-mq-material="liquid-glass"] .task-item::before,
+[data-mq-material="liquid-glass"] .drop-zone::before,
+[data-mq-material="liquid-glass"] .progress-track::before,
+[data-mq-material="liquid-glass"] .demo-modal::before {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
   border-radius: inherit;
   pointer-events: none;
-  /* Canto: claro en el lado que mira a la luz, frío y saturado en el opuesto.
-     El ancho del gradiente es el grosor del vidrio. */
-  background:
-    linear-gradient(var(--light-angle, 315deg),
-      rgba(255, 255, 255, 0.62) 0,
-      rgba(255, 255, 255, 0.06) calc(var(--mq-thick, 3.4px) * 1.6),
-      transparent calc(var(--mq-thick, 3.4px) * 3.4)),
-    linear-gradient(calc(var(--light-angle, 315deg) + 180deg),
-      rgba(150, 220, 255, 0.34) 0,
-      transparent calc(var(--mq-thick, 3.4px) * 2.6));
+  background: var(--mq-body, rgba(255, 255, 255, 0.25));
+  backdrop-filter:
+    blur(var(--mq-blur, 4px))
+    saturate(var(--mq-saturate, 120%))
+    brightness(var(--mq-brightness, 1.15));
+  -webkit-backdrop-filter:
+    blur(var(--mq-blur, 4px))
+    saturate(var(--mq-saturate, 120%))
+    brightness(var(--mq-brightness, 1.15));
 }
 
-html[data-quality="fallback"] [data-mq-material="liquid-glass"] .ui-button,
-html[data-quality="fallback"] [data-mq-material="liquid-glass"] .ui-card,
-html[data-quality="fallback"] [data-mq-material="liquid-glass"] .gallery-card {
-  backdrop-filter: blur(10px) saturate(150%) brightness(1.04);
-  -webkit-backdrop-filter: blur(10px) saturate(150%) brightness(1.04);
+/* Capa 3: el filo especular. Un inset de 1px arriba-izquierda y un canto más
+   apagado abajo-derecha: un solo vector de luz para todo el material. */
+[data-mq-material="liquid-glass"] .mq-glass::after,
+[data-mq-material="liquid-glass"] .ui-button::after,
+[data-mq-material="liquid-glass"] .ui-card::after,
+[data-mq-material="liquid-glass"] .switch-control::after,
+[data-mq-material="liquid-glass"] .knob::after,
+[data-mq-material="liquid-glass"] .top-nav-demo::after,
+[data-mq-material="liquid-glass"] .sidebar-demo::after,
+[data-mq-material="liquid-glass"] .tabs-demo::after,
+[data-mq-material="liquid-glass"] .floating-dock::after,
+[data-mq-material="liquid-glass"] .segmented-control::after,
+[data-mq-material="liquid-glass"] .music-player::after,
+[data-mq-material="liquid-glass"] .weather-widget::after,
+[data-mq-material="liquid-glass"] .calendar::after,
+[data-mq-material="liquid-glass"] .dropdown-menu::after,
+[data-mq-material="liquid-glass"] .tooltip-bubble::after,
+[data-mq-material="liquid-glass"] .alert::after,
+[data-mq-material="liquid-glass"] .notification-item::after,
+[data-mq-material="liquid-glass"] .system-toast::after,
+[data-mq-material="liquid-glass"] .task-item::after,
+[data-mq-material="liquid-glass"] .demo-modal::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    inset 1px 1px 1px var(--mq-lit, rgba(255, 255, 255, 0.75)),
+    inset -1px -1px 1px var(--mq-edge, rgba(255, 255, 255, 0.12));
+  /* El especular que sigue al cursor lo escribe scripts/liquid-glass.js en
+     --mq-cursor. Sin JS el material se ve igual, solo sin ese brillo. */
+  background: var(--mq-cursor, none);
 }
 
-html[data-quality="balanced"] [data-mq-material="liquid-glass"] .ui-button,
-html[data-quality="balanced"] [data-mq-material="liquid-glass"] .ui-card,
-html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
-  backdrop-filter: blur(7px) saturate(165%) contrast(1.06);
-  -webkit-backdrop-filter: blur(7px) saturate(165%) contrast(1.06);
+/* Capa 4: el contenido. Nunca entra en la capa filtrada. */
+[data-mq-material="liquid-glass"] .ui-button > *,
+[data-mq-material="liquid-glass"] .ui-card > *,
+[data-mq-material="liquid-glass"] .top-nav-demo > *,
+[data-mq-material="liquid-glass"] .sidebar-demo > *,
+[data-mq-material="liquid-glass"] .tabs-demo > *,
+[data-mq-material="liquid-glass"] .floating-dock > *,
+[data-mq-material="liquid-glass"] .segmented-control > *,
+[data-mq-material="liquid-glass"] .music-player > *,
+[data-mq-material="liquid-glass"] .weather-widget > *,
+[data-mq-material="liquid-glass"] .calendar > *,
+[data-mq-material="liquid-glass"] .alert > *,
+[data-mq-material="liquid-glass"] .demo-modal > * {
+  position: relative;
+  z-index: 2;
 }
 
 /* ==========================================================================
-   Botones — el material tiene que existir donde más se mira
+   Refracción real — solo donde url() funciona dentro de backdrop-filter
    ==========================================================================
-   El primario ya no es un relleno cian sólido. Un botón de vidrio es vidrio:
-   entre variantes cambia el tinte del cuerpo y el grosor del canto, no si el
-   material aparece o no. */
+   El feDisplacementMap de la referencia opera sobre los píxeles del propio
+   elemento, y el elemento está vacío: la turbulencia era decoración. Metida
+   dentro del backdrop-filter sí dobla el fondo.
+
+   Solo Chromium aplica url() dentro de backdrop-filter (WebKit #245510, abierto
+   desde 2022). @supports devuelve true en Firefox sin funcionar, así que la
+   detección es de motor y la hace el JS: data-mq-refract="on". */
+
+html[data-mq-refract="on"][data-quality="full"] [data-mq-material="liquid-glass"] .ui-button::before,
+html[data-mq-refract="on"][data-quality="full"] [data-mq-material="liquid-glass"] .ui-card::before,
+html[data-mq-refract="on"][data-quality="full"] [data-mq-material="liquid-glass"] .mq-glass::before,
+html[data-mq-refract="on"][data-quality="full"] [data-mq-material="liquid-glass"] .top-nav-demo::before,
+html[data-mq-refract="on"][data-quality="full"] [data-mq-material="liquid-glass"] .sidebar-demo::before,
+html[data-mq-refract="on"][data-quality="full"] [data-mq-material="liquid-glass"] .tabs-demo::before,
+html[data-mq-refract="on"][data-quality="full"] [data-mq-material="liquid-glass"] .floating-dock::before,
+html[data-mq-refract="on"][data-quality="full"] [data-mq-material="liquid-glass"] .segmented-control::before,
+html[data-mq-refract="on"][data-quality="full"] [data-mq-material="liquid-glass"] .music-player::before,
+html[data-mq-refract="on"][data-quality="full"] [data-mq-material="liquid-glass"] .weather-widget::before,
+html[data-mq-refract="on"][data-quality="full"] [data-mq-material="liquid-glass"] .calendar::before,
+html[data-mq-refract="on"][data-quality="full"] [data-mq-material="liquid-glass"] .knob::before,
+html[data-mq-refract="on"][data-quality="full"] [data-mq-material="liquid-glass"] .switch-control::before {
+  backdrop-filter:
+    url(#mq-glass-distortion)
+    blur(var(--mq-blur, 4px))
+    saturate(var(--mq-saturate, 120%))
+    brightness(var(--mq-brightness, 1.15));
+}
+
+/* ==========================================================================
+   Botones
+   ========================================================================== */
 
 [data-mq-material="liquid-glass"] .ui-button {
   --mq-radius: 14px;
-  --mq-thick: 3.2px;
   min-height: 44px;
   padding: 11px 18px;
-  font-weight: 680;
+  font-weight: 640;
   letter-spacing: -0.01em;
-  text-shadow: 0 1px 2px rgba(2, 10, 24, 0.55);
-  transform: translate3d(var(--liquid-x, 0px), var(--liquid-y, 0px), 0)
-             scaleX(var(--liquid-scale-x, 1))
-             scaleY(var(--liquid-scale-y, 1));
-  transform-origin: var(--px, 50%) var(--py, 50%);
+  text-shadow: 0 1px 2px var(--mq-halo, rgba(2, 8, 18, 0.6));
+  transition: transform 200ms cubic-bezier(.2,.9,.25,1.1), box-shadow 200ms ease;
 }
 
 [data-mq-material="liquid-glass"] .ui-button--primary {
-  --mq-body: rgba(26, 92, 138, 0.46);
-  --mq-thick: 5.0px;
-  --mq-iri: 0.22;
-  --mq-brd: rgba(214, 244, 255, 0.68);
-  --mq-lit: #eafaff;
-  color: #f6fdff;
+  --mq-body: rgba(255, 255, 255, 0.34);
+  --mq-lit: rgba(255, 255, 255, 0.95);
 }
-
-[data-mq-material="liquid-glass"] .ui-button--secondary {
-  --mq-body: rgba(12, 30, 52, 0.44);
-  --mq-thick: 3.6px;
-}
-
+[data-mq-material="liquid-glass"] .ui-button--secondary { --mq-body: rgba(255, 255, 255, 0.20); }
 [data-mq-material="liquid-glass"] .ui-button--tertiary {
-  --mq-body: rgba(12, 30, 52, 0.58);
-  --mq-thick: 2.6px;
-  --mq-brd: rgba(196, 232, 255, 0.22);
-  background: var(--mq-body, rgba(12, 30, 52, 0.58));
+  --mq-body: rgba(255, 255, 255, 0.12);
+  --mq-lit: rgba(255, 255, 255, 0.45);
   box-shadow: none;
 }
-
 [data-mq-material="liquid-glass"] .ui-button--danger {
-  --mq-body: rgba(142, 26, 52, 0.48);
-  --mq-lit: #ffd9de;
-  --mq-brd: rgba(255, 190, 200, 0.62);
-  --mq-ring: rgba(255, 140, 158, 0.9);
-  color: #fff2f4;
+  --mq-body: rgba(255, 120, 140, 0.30);
+  --mq-lit: rgba(255, 225, 232, 0.9);
+  --mq-ring: rgba(255, 150, 168, 0.9);
 }
 
 [data-mq-material="liquid-glass"] .ui-icon-button,
@@ -245,144 +249,151 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 [data-mq-material="liquid-glass"] .quick-actions button,
 [data-mq-material="liquid-glass"] .player-controls button {
   --mq-radius: 50%;
-  --mq-thick: 3.6px;
   position: relative;
   isolation: isolate;
-  border: 1px solid var(--mq-brd, rgba(196, 232, 255, 0.44));
-  background: var(--mq-body, rgba(12, 29, 50, 0.42));
-  color: var(--mq-text, #f2fbff);
+  border: 0;
+  background: transparent;
+  color: var(--mq-text, #ffffff);
 }
 
-[data-mq-material="liquid-glass"] .button-group .ui-button {
-  --mq-radius: 10px;
-}
+[data-mq-material="liquid-glass"] .button-group .ui-button { --mq-radius: 10px; }
 
 /* ==========================================================================
-   Estados — la presión es deformación del material, no un halo
+   Estados
    ========================================================================== */
 
-[data-mq-material="liquid-glass"] .ui-button:hover,
-[data-mq-material="liquid-glass"] .ui-icon-button:hover,
-[data-mq-material="liquid-glass"] .ui-fab:hover {
-  --mq-thick: 4.4px;
-  --mq-lit: #ffffff;
-  border-color: color-mix(in srgb, var(--mq-brd, rgba(196, 232, 255, 0.44)) 70%, white);
+[data-mq-material="liquid-glass"] .ui-button:hover {
+  --mq-body: rgba(255, 255, 255, 0.34);
+  --mq-lit: rgba(255, 255, 255, 0.95);
+  transform: translateY(-1px);
 }
 
 [data-mq-material="liquid-glass"] .ui-button:active,
-[data-mq-material="liquid-glass"] .is-liquid-pressed,
 [data-mq-material="liquid-glass"] .is-pressed {
-  /* Al presionar, más vidrio en el camino óptico: el canto se ensancha y la
-     distorsión sube. La caída de la sombra es el recorrido físico. */
-  --mq-thick: 5.6px;
-  --mq-caustic: 0.28;
-  box-shadow:
-    0 1px 0 0 rgba(255, 255, 255, 0.10) inset,
-    0 -2px 0 0 var(--mq-edge, rgba(3, 12, 26, 0.62)) inset,
-    0 4px 12px -8px rgba(2, 10, 24, 0.8);
+  transform: translateY(1px) scale(0.985);
+  box-shadow: 0 3px 10px -8px rgba(2, 10, 24, 0.7);
 }
 
 [data-mq-material="liquid-glass"] .ui-button:focus-visible,
 [data-mq-material="liquid-glass"] .switch-control:focus-visible,
 [data-mq-material="liquid-glass"] .custom-slider:focus-visible,
 [data-mq-material="liquid-glass"] .knob:focus-visible,
-[data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]):focus-visible,
+[data-mq-material="liquid-glass"] .field input:focus-visible,
 [data-mq-material="liquid-glass"] .field textarea:focus-visible,
 [data-mq-material="liquid-glass"] .field select:focus-visible,
 [data-mq-material="liquid-glass"] [data-focus="true"] {
-  outline: 2px solid var(--mq-ring, rgba(120, 224, 255, 0.85));
+  outline: 2px solid var(--mq-ring, rgba(150, 225, 255, 0.9));
   outline-offset: 2px;
-  --mq-lit: #ffffff;
 }
 
 [data-mq-material="liquid-glass"] .ui-button:disabled,
 [data-mq-material="liquid-glass"] [aria-disabled="true"] {
-  /* El disabled baja el espesor, no solo la opacidad: es menos vidrio, no
-     vidrio a medio pintar. El texto conserva contraste suficiente. */
-  --mq-body: rgba(28, 42, 58, 0.62);
-  --mq-thick: 1.6px;
-  --mq-iri: 0;
-  --mq-caustic: 0;
-  --mq-brd: rgba(170, 195, 214, 0.20);
-  color: rgba(226, 240, 250, 0.82);
+  --mq-body: rgba(190, 205, 220, 0.22);
+  --mq-lit: rgba(255, 255, 255, 0.28);
+  color: rgba(255, 255, 255, 0.72);
   opacity: 1;
   box-shadow: none;
+  transform: none;
 }
 
 /* ==========================================================================
-   Controles
-   ========================================================================== */
+   Controles con parte fija y parte móvil
+   ==========================================================================
+   Regla del round: el riel y el pulgar son cada uno su propia pila de vidrio.
+   Es lo que hace el toggle de referencia y generaliza a switch, slider y
+   segmented control. Un control con parte móvil son dos vidrios, no uno. */
 
-[data-mq-material="liquid-glass"] .switch-control {
-  --mq-radius: 999px;
-  --mq-thick: 3.0px;
-  --mq-dome: 0.98;
-  --mq-body: rgba(9, 22, 40, 0.44);
-}
+[data-mq-material="liquid-glass"] .switch-control { --mq-radius: 999px; }
 [data-mq-material="liquid-glass"] .switch-control[aria-checked="true"] {
-  --mq-body: rgba(26, 96, 142, 0.48);
-  --mq-iri: 0.24;
+  --mq-body: rgba(150, 225, 255, 0.34);
 }
 [data-mq-material="liquid-glass"] .switch-thumb {
-  background: linear-gradient(180deg, #ffffff, #cfe9f7);
-  box-shadow: 0 3px 8px rgba(2, 10, 24, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.4) inset;
+  position: relative;
+  z-index: 2;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(2px) saturate(140%) brightness(1.2);
+  -webkit-backdrop-filter: blur(2px) saturate(140%) brightness(1.2);
+  box-shadow:
+    inset 1px 1px 1px rgba(255, 255, 255, 0.9),
+    0 2px 6px rgba(2, 10, 24, 0.35);
 }
 
 [data-mq-material="liquid-glass"] .slider-track {
-  border-radius: 999px;
-  background: rgba(8, 22, 38, 0.5);
-  box-shadow: 0 1px 3px rgba(2, 10, 24, 0.7) inset, 0 -1px 0 rgba(255, 255, 255, 0.16) inset;
+  position: relative;
+  isolation: isolate;
   height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 1px 1px 1px rgba(255, 255, 255, 0.4);
 }
 [data-mq-material="liquid-glass"] .slider-fill {
-  background: linear-gradient(90deg,
-    color-mix(in srgb, var(--mq-lit, #cfeeff) 40%, transparent),
-    var(--mq-lit, #cfeeff));
-  box-shadow: 0 0 12px -2px var(--mq-ring, rgba(120, 224, 255, 0.85));
+  background: rgba(255, 255, 255, 0.42);
+  border-radius: inherit;
 }
-[data-mq-material="liquid-glass"] .slider-thumb {
-  background: radial-gradient(circle at 34% 28%, #ffffff, #b9dcf0 62%, #7fb4cf);
-  box-shadow: 0 4px 10px rgba(2, 10, 24, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.5) inset;
-}
-
-[data-mq-material="liquid-glass"] .knob {
-  --mq-radius: 50%;
-  --mq-thick: 5.0px;
-  --mq-iri: 0.26;
-  /* Un knob es una esfera de vidrio, no una lámina: la curvatura ocupa toda la
-     superficie. Es el mejor escaparate del material y merece el máximo. */
-  --mq-dome: 0.95;
-  --mq-profile: 2;
-  --mq-body: rgba(11, 28, 48, 0.44);
+[data-mq-material="liquid-glass"] .slider-thumb,
+[data-mq-material="liquid-glass"] .range-slider input::-webkit-slider-thumb {
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(2px) saturate(140%) brightness(1.2);
+  -webkit-backdrop-filter: blur(2px) saturate(140%) brightness(1.2);
+  box-shadow:
+    inset 1px 1px 1px rgba(255, 255, 255, 0.95),
+    0 3px 8px rgba(2, 10, 24, 0.4);
 }
 
-[data-mq-material="liquid-glass"] .progress-track {
-  border-radius: 999px;
-  background: rgba(8, 22, 38, 0.5);
-  box-shadow: 0 1px 3px rgba(2, 10, 24, 0.7) inset;
-}
+[data-mq-material="liquid-glass"] .knob { --mq-radius: 50%; }
+
+[data-mq-material="liquid-glass"] .progress-track { --mq-radius: 999px; --mq-body: rgba(255,255,255,0.14); }
 [data-mq-material="liquid-glass"] .progress-fill {
-  background: linear-gradient(90deg,
-    color-mix(in srgb, var(--mq-lit, #cfeeff) 34%, transparent),
-    var(--mq-lit, #cfeeff));
+  position: relative;
+  z-index: 2;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.5);
+  box-shadow: inset 1px 1px 1px rgba(255, 255, 255, 0.85);
 }
 
-/* Hueco / inset: los campos son la cara interior del vidrio, no la exterior.
-   La luz entra por el borde opuesto al de las superficies elevadas. */
+/* Range slider: el control nativo sin resetear pintaba su propia pista encima
+   del material, y una regla de material con `position: relative` sacaba el
+   segundo input del apilado. */
+[data-mq-material="liquid-glass"] .range-slider input {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  height: 44px;
+}
+[data-mq-material="liquid-glass"] .range-slider input::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 999px;
+  background: transparent;
+}
+[data-mq-material="liquid-glass"] .range-slider input.range-min::-webkit-slider-runnable-track {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 1px 1px 1px rgba(255, 255, 255, 0.4);
+}
+[data-mq-material="liquid-glass"] .range-slider input::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -6px;
+}
+
+/* Campos: el vidrio visto por dentro. La luz entra por el borde opuesto. */
 [data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),
 [data-mq-material="liquid-glass"] .field textarea,
 [data-mq-material="liquid-glass"] .field select {
   --mq-radius: 12px;
-  --mq-thick: 2.6px;
-  --mq-body: rgba(5, 16, 31, 0.52);
+  --mq-body: rgba(255, 255, 255, 0.14);
+  --mq-lit: rgba(255, 255, 255, 0.10);
+  --mq-edge: rgba(255, 255, 255, 0.6);
   padding: 11px 13px;
-  box-shadow:
-    0 2px 6px -2px rgba(2, 10, 24, 0.9) inset,
-    0 -1px 0 0 rgba(255, 255, 255, 0.16) inset;
 }
-[data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color])::placeholder,
+[data-mq-material="liquid-glass"] .field input::placeholder,
 [data-mq-material="liquid-glass"] .field textarea::placeholder {
-  color: rgba(206, 228, 244, 0.6);
+  color: rgba(255, 255, 255, 0.65);
 }
 
 /* ==========================================================================
@@ -394,10 +405,8 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 [data-mq-material="liquid-glass"] .music-player,
 [data-mq-material="liquid-glass"] .weather-widget,
 [data-mq-material="liquid-glass"] .calendar {
-  --mq-radius: 20px;
-  --mq-thick: 4.6px;
-  --mq-body: rgba(10, 25, 43, 0.46);
-  --mq-caustic: 0.5;
+  --mq-radius: 26px;
+  --mq-blur: 6px;
 }
 
 [data-mq-material="liquid-glass"] .top-nav-demo,
@@ -405,98 +414,151 @@ html[data-quality="balanced"] [data-mq-material="liquid-glass"] .gallery-card {
 [data-mq-material="liquid-glass"] .tabs-demo,
 [data-mq-material="liquid-glass"] .floating-dock,
 [data-mq-material="liquid-glass"] .segmented-control {
-  --mq-radius: 16px;
-  --mq-thick: 3.8px;
-  --mq-body: rgba(9, 23, 41, 0.46);
-  --mq-caustic: 0.72;
+  --mq-radius: 18px;
+  --mq-blur: 5px;
 }
-[data-mq-material="liquid-glass"] .floating-dock {
-  --mq-radius: 22px;
-}
+[data-mq-material="liquid-glass"] .floating-dock { --mq-radius: 22px; }
 
-/* Los overlays flotan sobre contenido, no sobre el fondo: necesitan más cuerpo
-   o el texto de debajo se lee a través. */
+/* Los overlays flotan sobre contenido, no sobre el fondo: más cuerpo. */
 [data-mq-material="liquid-glass"] .dropdown-menu,
 [data-mq-material="liquid-glass"] .tooltip-bubble,
 [data-mq-material="liquid-glass"] .system-toast,
 [data-mq-material="liquid-glass"] .demo-modal {
-  --mq-body: rgba(8, 20, 37, 0.66);
-  --mq-thick: 3.2px;
-  --mq-blur-scale: 1.5;
+  --mq-body: rgba(255, 255, 255, 0.34);
+  --mq-blur: 10px;
 }
 
 [data-mq-material="liquid-glass"] .alert,
 [data-mq-material="liquid-glass"] .notification-item,
 [data-mq-material="liquid-glass"] .task-item {
-  --mq-radius: 12px;
-  --mq-thick: 2.4px;
-  --mq-body: rgba(10, 25, 43, 0.46);
+  --mq-radius: 14px;
 }
 
-/* La galería es chrome del laboratorio, no un material.
-   Siendo vidrio, cada componente de dentro apilaba su tinte sobre el suyo y el
-   resultado leía opaco. Transparente, los componentes se apoyan directamente
-   sobre el fondo y refractan lo que de verdad tienen detrás. */
+/* La galería es chrome del laboratorio, no un material: siendo vidrio, cada
+   componente de dentro apilaba su tinte sobre el suyo. */
 [data-mq-material="liquid-glass"] .gallery-card {
   background: transparent;
-  border: 1px solid rgba(150, 190, 220, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 18px;
   box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
 }
-
-/* ==========================================================================
-   Texto sobre el material
-   ==========================================================================
-   El arquetipo que más se olvida. Un material puede verse increíble en un
-   botón de 44px y volver ilegible un párrafo de 14px encima. */
-
 [data-mq-material="liquid-glass"] .gallery-card h4 {
-  /* La galería dejó de ser vidrio, así que su título quedó sobre el fondo
-     crudo y cayó a 4.31:1 sobre el peor fondo. Sin superficie que lo sostenga,
-     la legibilidad la tiene que dar el propio texto. */
-  color: var(--mq-text, #f2fbff);
-  /* --mq-halo se invierte con el tono: forzar blanco aquí arreglaba el tono
-     oscuro y rompía el claro. */
+  color: var(--mq-text, #ffffff);
   text-shadow:
     0 1px 3px var(--mq-halo, rgba(2, 8, 18, 0.95)),
     0 0 14px var(--mq-halo, rgba(2, 8, 18, 0.75));
 }
 
+/* ==========================================================================
+   Indicador que viaja
+   ==========================================================================
+   El indicador es su propia pila de vidrio, así que al moverse arrastra su
+   propio backdrop. La curva lleva sobreimpulso: rebota al llegar. */
+
+[data-mq-material="liquid-glass"] .mq-indicator {
+  position: absolute;
+  z-index: 0;
+  border-radius: 999px;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(3px) saturate(140%) brightness(1.18);
+  -webkit-backdrop-filter: blur(3px) saturate(140%) brightness(1.18);
+  box-shadow:
+    inset 1px 1px 1px rgba(255, 255, 255, 0.85),
+    0 3px 10px -4px rgba(2, 10, 24, 0.5);
+  transition:
+    transform 460ms cubic-bezier(.22, 1.4, .36, 1),
+    width 460ms cubic-bezier(.22, 1.4, .36, 1);
+}
+
+/* ==========================================================================
+   Texto sobre el material
+   ========================================================================== */
+
 [data-mq-material="liquid-glass"] .ui-card h5,
 [data-mq-material="liquid-glass"] .ui-card strong,
 [data-mq-material="liquid-glass"] .breadcrumbs,
 [data-mq-material="liquid-glass"] .step-indicator span {
-  color: var(--mq-text, #f2fbff);
-  text-shadow: 0 1px 3px rgba(2, 10, 24, 0.7);
+  color: var(--mq-text, #ffffff);
+  text-shadow: 0 1px 3px var(--mq-halo, rgba(2, 8, 18, 0.7));
 }
 [data-mq-material="liquid-glass"] .ui-card p,
 [data-mq-material="liquid-glass"] .gallery-card p,
 [data-mq-material="liquid-glass"] .weather-days,
 [data-mq-material="liquid-glass"] .player-meta small {
-  /* Deliberadamente más claro que el --muted global: sobre vidrio, el gris
-     medio del laboratorio cae por debajo de 4.5:1. */
-  color: rgba(228, 244, 255, 0.97);
-  text-shadow: 0 1px 2px rgba(2, 10, 24, 0.6);
+  color: rgba(255, 255, 255, 0.94);
+  text-shadow: 0 1px 2px var(--mq-halo, rgba(2, 8, 18, 0.6));
 }
 
 /* ==========================================================================
-   Chrome del laboratorio para este material (no forma parte de la receta)
+   Chrome del laboratorio
    ========================================================================== */
 
 html[data-style="liquid-glass"] {
-  --page-fg: #f4fbff;
-  --muted: #c3d7e3;
-  --panel-bg: rgba(5, 16, 28, 0.42);
-  --panel-border: rgba(255, 255, 255, 0.16);
+  --page-fg: #ffffff;
+  --muted: #d3e2ee;
+  --panel-bg: rgba(255, 255, 255, 0.10);
+  --panel-border: rgba(255, 255, 255, 0.18);
 }
 
 .stage-liquid-glass {
   position: relative;
   overflow: hidden;
   border-radius: 18px;
-  background: rgba(4, 12, 24, 0.18);
+}
+
+/* ==========================================================================
+   Tono claro
+   ==========================================================================
+   Sobre fondo claro el vidrio se ve oscuro contra la luz, igual que un vidrio
+   real: el cuerpo se oscurece y el texto se invierte. */
+
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"],
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] {
+  --mq-body: rgba(20, 40, 62, 0.16);
+  --mq-lit: rgba(255, 255, 255, 0.9);
+  --mq-edge: rgba(30, 60, 90, 0.18);
+  --mq-text: #0c2032;
+  --mq-brd: rgba(30, 60, 90, 0.22);
+  --mq-ring: rgba(14, 116, 168, 0.9);
+  --mq-halo: rgba(250, 253, 255, 0.95);
+  --mq-brightness: 1.02;
+}
+
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-button--primary,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-button--primary {
+  --mq-body: rgba(20, 40, 62, 0.26);
+  color: #ffffff;
+  --mq-halo: rgba(6, 20, 34, 0.8);
+}
+
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-button:disabled,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-button:disabled {
+  --mq-body: rgba(30, 55, 80, 0.22);
+  color: rgba(12, 32, 50, 0.78);
+}
+
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-card p,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-card p,
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .gallery-card p,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .gallery-card p {
+  color: rgba(10, 30, 48, 0.92);
+}
+
+html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .field input::placeholder,
+html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .field input::placeholder {
+  color: rgba(12, 32, 50, 0.6);
+}
+
+/* ==========================================================================
+   Niveles de calidad
+   ========================================================================== */
+
+html[data-quality="fallback"] [data-mq-material="liquid-glass"] .ui-button::before,
+html[data-quality="fallback"] [data-mq-material="liquid-glass"] .ui-card::before {
+  /* Sin saturación ni brillo: solo desenfoque y tinte. Sigue siendo vidrio. */
+  backdrop-filter: blur(var(--mq-blur, 4px));
+  -webkit-backdrop-filter: blur(var(--mq-blur, 4px));
 }
 
 /* ==========================================================================
@@ -504,247 +566,54 @@ html[data-style="liquid-glass"] {
    ========================================================================== */
 
 @media (prefers-reduced-motion: reduce) {
-  /* Sin transformaciones continuas, sin ondas, sin spring. El material sigue
-     siendo reconocible en estático: si solo funcionara en movimiento sería un
-     truco, no un material. El canto, el bisel y la cáustica se quedan. */
+  /* Sin recorrido elástico ni sobreimpulso. El material sigue siendo
+     reconocible en estático: el canto, el tinte y el filo se quedan. */
   [data-mq-material="liquid-glass"] .ui-button,
-  [data-mq-material="liquid-glass"] .switch-control,
-  [data-mq-material="liquid-glass"] .knob,
-  [data-mq-material="liquid-glass"] .ui-card {
+  [data-mq-material="liquid-glass"] .mq-indicator {
+    transition-duration: 1ms;
     transform: none;
-    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  [data-mq-material="liquid-glass"] .ui-button:hover,
+  [data-mq-material="liquid-glass"] .ui-button:active { transform: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  [data-mq-material="liquid-glass"] .ui-button::before,
+  [data-mq-material="liquid-glass"] .ui-card::before,
+  [data-mq-material="liquid-glass"] .top-nav-demo::before,
+  [data-mq-material="liquid-glass"] .sidebar-demo::before {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(14, 28, 44, 0.92);
   }
 }
 
 @media (forced-colors: active) {
-  /* Aquí desaparecen backdrop-filter, sombras y el canvas. Sin un borde real,
-     el control pierde sus límites. */
+  /* Aquí desaparecen backdrop-filter y sombras. Sin un borde real, el control
+     pierde sus límites. */
   [data-mq-material="liquid-glass"] .ui-button,
   [data-mq-material="liquid-glass"] .ui-card,
   [data-mq-material="liquid-glass"] .switch-control,
-  [data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),
+  [data-mq-material="liquid-glass"] .field input,
   [data-mq-material="liquid-glass"] .field textarea,
   [data-mq-material="liquid-glass"] .field select,
   [data-mq-material="liquid-glass"] .floating-dock,
   [data-mq-material="liquid-glass"] .top-nav-demo,
+  [data-mq-material="liquid-glass"] .sidebar-demo,
   [data-mq-material="liquid-glass"] .gallery-card {
     border: 2px solid CanvasText;
     background: Canvas;
     color: CanvasText;
     box-shadow: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
-  [data-mq-material="liquid-glass"] .mq-lens { display: none; }
+  [data-mq-material="liquid-glass"] .ui-button::before,
+  [data-mq-material="liquid-glass"] .ui-button::after,
+  [data-mq-material="liquid-glass"] .ui-card::before,
+  [data-mq-material="liquid-glass"] .ui-card::after,
+  [data-mq-material="liquid-glass"] .mq-indicator { display: none; }
   [data-mq-material="liquid-glass"] .ui-button:focus-visible,
   [data-mq-material="liquid-glass"] [data-focus="true"] {
     outline: 3px solid Highlight;
     outline-offset: 2px;
   }
-}
-
-/* ==========================================================================
-   Receta consciente del tono
-   ==========================================================================
-   Aquí hay una tensión real y conviene dejarla escrita.
-
-   El gate dice: contraste ≥ 4.5:1 medido sobre blanco y sobre negro, y el
-   vidrio no puede pedirle legibilidad al fondo. El material dice: el vidrio
-   tiene que dejar ver lo que hay detrás. Para una sola receta de texto claro
-   las dos cosas son incompatibles: el alfa que hace pasar el gate sobre blanco
-   (~.76) es tanto tinte que el botón empieza a leer como relleno sólido.
-
-   La salida no es elegir una de las dos, es que la receta conozca el tono —
-   igual que un vidrio real se ve oscuro contra el cielo y claro contra la
-   sombra. Sobre fondo claro el cuerpo se aclara y el texto se oscurece, y con
-   eso el alfa puede bajar a ~.42 sin perder contraste.
-
-   En el laboratorio el tono lo marca el fondo elegido. En Morphiq UI esto se
-   mapea a prefers-color-scheme o a [data-theme]. */
-
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"],
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"],
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] {
-  --mq-body: rgba(250, 253, 255, 0.42);
-  --mq-lit: #ffffff;
-  --mq-edge: rgba(70, 110, 140, 0.42);
-  --mq-text: #0a1c2c;
-  --mq-brd: rgba(38, 74, 104, 0.34);
-  --mq-ring: rgba(14, 116, 168, 0.9);
-  --mq-halo: rgba(248, 252, 255, 0.95);
-  --mq-iri: 0.20;
-}
-
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-button,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-button {
-  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.7);
-}
-
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-button--primary,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-button--primary {
-  --mq-body: rgba(226, 244, 255, 0.52);
-  --mq-brd: rgba(20, 92, 134, 0.5);
-  color: #05202f;
-}
-
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-button--danger,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-button--danger {
-  --mq-body: rgba(255, 232, 236, 0.56);
-  --mq-brd: rgba(150, 30, 54, 0.46);
-  color: #4a0713;
-}
-
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .field textarea,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .field textarea,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .field select,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .field select {
-  --mq-body: rgba(255, 255, 255, 0.62);
-  color: #0a1c2c;
-}
-
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-card p,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-card p,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .gallery-card p,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .gallery-card p,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .player-meta small,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .player-meta small {
-  color: rgba(16, 40, 60, 0.92);
-  text-shadow: none;
-}
-
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-card h5,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-card h5,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-card strong,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-card strong,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .gallery-card h4,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .gallery-card h4 {
-  text-shadow: none;
-}
-
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-button:disabled,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-button:disabled,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] [aria-disabled="true"],
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] [aria-disabled="true"] {
-  --mq-body: rgba(228, 234, 240, 0.78);
-  color: rgba(28, 50, 68, 0.72);
-}
-
-/* Huecos de la receta de tono claro que destapó tools/contrast.mjs al medir
-   píxeles renderizados: estas superficies conservaban el cuerpo oscuro del tono
-   contrario, así que quedaba texto oscuro sobre vidrio oscuro. */
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-card,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-card,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .demo-modal,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .demo-modal,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .music-player,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .music-player,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .weather-widget,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .weather-widget,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .calendar,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .calendar {
-  --mq-body: rgba(252, 254, 255, 0.52);
-  --mq-edge: rgba(70, 110, 140, 0.34);
-}
-
-html[data-backdrop-tone="light"]html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .gallery-card {
-  --mq-body: rgba(250, 253, 255, 0.68);
-  --mq-edge: rgba(70, 110, 140, 0.30);
-}
-
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .top-nav-demo,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .top-nav-demo,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .sidebar-demo,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .sidebar-demo,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .tabs-demo,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .tabs-demo,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .floating-dock,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .floating-dock,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .segmented-control,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .segmented-control,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .alert,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .alert,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .notification-item,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .notification-item,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .task-item,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .task-item,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .switch-control,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .switch-control,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .knob,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .knob {
-  --mq-body: rgba(250, 253, 255, 0.50);
-  --mq-edge: rgba(70, 110, 140, 0.34);
-}
-
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-button--secondary,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-button--secondary,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .ui-button--tertiary,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .ui-button--tertiary {
-  --mq-body: rgba(250, 253, 255, 0.58);
-  color: #0a1c2c;
-}
-
-/* Los overlays flotan sobre contenido claro: necesitan más cuerpo, no menos. */
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .dropdown-menu,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .dropdown-menu,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .tooltip-bubble,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .tooltip-bubble,
-html[data-backdrop-tone="light"][data-mq-material="liquid-glass"] .system-toast,
-html[data-backdrop-tone="light"] [data-mq-material="liquid-glass"] .system-toast {
-  --mq-body: rgba(252, 254, 255, 0.80);
-}
-
-/* ==========================================================================
-   Range slider
-   ==========================================================================
-   El control nativo llegaba sin `appearance: none`, así que Chromium pintaba su
-   propia pista encima del material. Y como los dos <input type=range> se apilan
-   con position:absolute, cualquier regla de material que les imponga
-   `position: relative` los saca del apilado: el segundo caía debajo del output
-   como una barra suelta. Aquí se resetea el control y se le da pista y pulgar
-   propios del material. */
-
-[data-mq-material="liquid-glass"] .range-slider input {
-  appearance: none;
-  -webkit-appearance: none;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  height: 44px;
-}
-
-[data-mq-material="liquid-glass"] .range-slider input::-webkit-slider-runnable-track {
-  height: 10px;
-  border-radius: 999px;
-  /* Solo la primera pista pinta fondo: dos pistas superpuestas duplican el
-     tinte y el resultado lee más opaco que el resto del material. */
-  background: transparent;
-}
-[data-mq-material="liquid-glass"] .range-slider input.range-min::-webkit-slider-runnable-track {
-  background: rgba(8, 22, 38, 0.5);
-  box-shadow: 0 1px 3px rgba(2, 10, 24, 0.7) inset, 0 -1px 0 rgba(255, 255, 255, 0.16) inset;
-}
-[data-mq-material="liquid-glass"] .range-slider input::-webkit-slider-thumb {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 22px;
-  height: 22px;
-  margin-top: -6px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 34% 28%, #ffffff, #b9dcf0 62%, #7fb4cf);
-  box-shadow: 0 4px 10px rgba(2, 10, 24, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.5) inset;
-}
-[data-mq-material="liquid-glass"] .range-slider input::-moz-range-track {
-  height: 10px;
-  border-radius: 999px;
-  background: rgba(8, 22, 38, 0.5);
-}
-[data-mq-material="liquid-glass"] .range-slider input::-moz-range-thumb {
-  width: 22px;
-  height: 22px;
-  border: 0;
-  border-radius: 50%;
-  background: radial-gradient(circle at 34% 28%, #ffffff, #b9dcf0 62%, #7fb4cf);
-  box-shadow: 0 4px 10px rgba(2, 10, 24, 0.6);
 }

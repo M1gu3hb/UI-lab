@@ -36,9 +36,7 @@
     viewport: 'wide'
   };
 
-  let liquidRenderer = null;
   let liquidController = null;
-  let lensEngine = null;
   let galleryAudioTimer = null;
 
   const tokenControlMap = {
@@ -49,17 +47,7 @@
     '--material-blur': { input: 'blur', output: value => `${value}px`, css: value => `${value}px` },
     '--border-alpha': { input: 'borderAlpha', output: value => `${value}%`, css: value => String(Number(value) / 100) },
     '--material-roughness': { input: 'roughness', output: value => `${value}%`, css: value => String(Number(value) / 100) },
-    '--material-specular': { input: 'specular', output: value => `${value}%`, css: value => String(Number(value) / 100) },
-    '--material-refraction': { input: 'refraction', output: value => `${value}%`, css: value => String(Number(value) / 100) },
-    '--material-dispersion': { input: 'dispersion', output: value => `${value}%`, css: value => String(Number(value) / 100) },
-    '--ripple-intensity': { input: 'ripple', output: value => `${value}%`, css: value => String(Number(value) / 100) },
-    '--ripple-brightness': { input: 'waveBrightness', output: value => `${value}%`, css: value => String(Number(value) / 100) },
-    '--ripple-count': { input: 'waveCount', output: value => `${Math.round(Number(value))}`, css: value => String(Math.round(Number(value))) },
-    '--motion-elasticity': { input: 'elasticity', output: value => `${value}%`, css: value => String(Number(value) / 100) },
-    '--motion-stiffness': { input: 'stiffness', output: value => value, css: value => String(value) },
-    '--motion-damping': { input: 'damping', output: value => value, css: value => String(value) },
-    '--stretch-limit': { input: 'stretch', output: value => `${value}%`, css: value => String(Number(value) / 100) },
-    '--motion-intensity': { input: 'motion', output: value => `${value}%`, css: value => String(Number(value) / 100) }
+    '--material-specular': { input: 'specular', output: value => `${value}%`, css: value => String(Number(value) / 100) }
   };
 
   const componentNames = {
@@ -135,7 +123,6 @@
     target.innerHTML = featuredMarkup(state.component);
     applyForcedState(target);
     attachInteractions(target);
-    syncLenses(target);
   }
 
   function renderStates() {
@@ -144,7 +131,6 @@
     ];
     $('#stateStrip').innerHTML = states.map(([label, className]) => `<div class="state-demo"><span>${label}</span><div>${stateMarkup(label === 'Rest' ? componentNames[state.component] : label, className)}</div></div>`).join('');
     attachInteractions($('#stateStrip'));
-    syncLenses($('#stateStrip'));
     /* data-focus="true" es el equivalente capturable de :focus-visible. Sin él
        el estado de foco no aparece en ninguna captura. */
     const focus = $('.is-focus', $('#stateStrip'));
@@ -219,7 +205,6 @@
     gallery.innerHTML = Object.values(gallerySections).map(section => section()).join('');
     filterGallery();
     attachInteractions(gallery);
-    syncLenses(gallery);
   }
 
   function filterGallery() {
@@ -316,18 +301,83 @@
     });
   }
 
+  /* Indicador que viaja.
+     nav, sidebar, tabs, dock, paginación y segmented control son el mismo
+     patrón — un indicador que se mueve entre celdas — así que se resuelve una
+     vez. El indicador es su propia superficie, de modo que al desplazarse
+     arrastra su propio backdrop: es lo que hace que "afecte a lo de atrás".
+
+     Se mide la caja real de la celda destino en vez de calcular porcentajes.
+     El segmented control lo hacía con translateX(index * 100%) sobre un
+     elemento cuyo ancho es calc((100% - 8px)/3), y por eso no llegaba nunca
+     donde debía. */
+  const INDICATOR_GROUPS = [
+    ['.segmented-control', 'button'],
+    ['.tabs-demo', 'button'],
+    ['.sidebar-demo', 'button'],
+    ['.floating-dock', 'button'],
+    ['.pagination', 'button'],
+    ['.top-nav-demo nav', 'button']
+  ];
+
+  function isActiveCell(cell) {
+    return cell.classList.contains('is-active')
+      || cell.getAttribute('aria-pressed') === 'true'
+      || cell.getAttribute('aria-selected') === 'true'
+      || cell.getAttribute('aria-current') === 'page';
+  }
+
+  function moveIndicator(container, indicator, cell) {
+    if (!cell) { indicator.style.opacity = '0'; return; }
+    /* Todas las lecturas antes de cualquier escritura. */
+    const host = container.getBoundingClientRect();
+    const target = cell.getBoundingClientRect();
+    indicator.style.opacity = '1';
+    indicator.style.width = `${target.width}px`;
+    indicator.style.height = `${target.height}px`;
+    indicator.style.transform =
+      `translate(${(target.left - host.left).toFixed(1)}px, ${(target.top - host.top).toFixed(1)}px)`;
+  }
+
   function bindSegmented(scope) {
-    $$('.segmented-control', scope).forEach(group => {
-      if (group.dataset.bound) return;
-      group.dataset.bound = 'true';
-      const buttons = $$('button', group);
-      const indicator = $('.segmented-indicator', group);
-      const select = index => {
-        buttons.forEach((button, current) => button.setAttribute('aria-pressed', String(current === index)));
-        if (indicator) indicator.style.transform = `translateX(${index * 100}%)`;
-      };
-      buttons.forEach((button, index) => button.addEventListener('click', () => select(index)));
-    });
+    for (const [containerSelector, cellSelector] of INDICATOR_GROUPS) {
+      $$(containerSelector, scope).forEach(container => {
+        if (container.dataset.indicatorBound) return;
+        container.dataset.indicatorBound = 'true';
+        container.classList.add('mq-nav-track');
+
+        const cells = $$(cellSelector, container);
+        if (cells.length < 2) return;
+
+        /* Si el markup ya trae un indicador se reutiliza; si no, se crea. */
+        let indicator = $('.segmented-indicator', container);
+        if (!indicator) {
+          indicator = document.createElement('span');
+          indicator.setAttribute('aria-hidden', 'true');
+          container.prepend(indicator);
+        }
+        indicator.classList.add('mq-indicator');
+
+        const select = active => {
+          cells.forEach(cell => {
+            const on = cell === active;
+            cell.classList.toggle('is-active', on);
+            if (cell.hasAttribute('aria-pressed')) cell.setAttribute('aria-pressed', String(on));
+            if (cell.hasAttribute('aria-selected')) cell.setAttribute('aria-selected', String(on));
+          });
+          moveIndicator(container, indicator, active);
+        };
+
+        cells.forEach(cell => cell.addEventListener('click', () => select(cell)));
+        select(cells.find(isActiveCell) ?? cells[0]);
+
+        /* El indicador se mide en píxeles, así que hay que recolocarlo cuando
+           el contenedor cambia de tamaño. */
+        new ResizeObserver(() => {
+          moveIndicator(container, indicator, cells.find(isActiveCell) ?? cells[0]);
+        }).observe(container);
+      });
+    }
   }
 
   function bindDropdowns(scope) {
@@ -476,7 +526,7 @@
         $$('button', tabs).forEach(item => { item.classList.toggle('is-active', item === button); item.setAttribute('aria-selected', String(item === button)); });
       }));
     });
-    $$('.sidebar-demo, .floating-dock, .pagination, .top-nav-demo nav', scope).forEach(nav => {
+    $$('.breadcrumbs', scope).forEach(nav => {
       if (nav.dataset.bound) return; nav.dataset.bound = 'true';
       $$('button', nav).forEach(button => button.addEventListener('click', () => {
         $$('button', nav).forEach(item => item.classList.toggle('is-active', item === button));
@@ -624,9 +674,6 @@
     renderGallery();
     renderRecipe();
     renderCompare();
-    lensEngine?.setEnabled(lensActive());
-    syncLenses();
-    lensEngine?.invalidate();
   }
 
   function applyVariant(variant) {
@@ -640,8 +687,6 @@
       syncControlsFromCss();
     }
     renderRecipe();
-    liquidController?.refreshOptics?.();
-    lensEngine?.invalidate();
   }
 
   function syncControlsFromCss() {
@@ -652,7 +697,6 @@
       if (!value) return;
       if (token === '--light-angle') value = Number.parseFloat(value);
       else if (['--material-depth','--material-blur'].includes(token)) value = Number.parseFloat(value);
-      else if (['--motion-stiffness','--motion-damping','--ripple-count'].includes(token)) value = Number.parseFloat(value);
       else value = Number.parseFloat(value) * 100;
       if (Number.isFinite(value)) {
         input.value = String(Math.round(value * 100) / 100);
@@ -661,8 +705,6 @@
       }
     });
     $('#miniLight').value = $('#lightDirection').value;
-    $('#miniMotion').value = $('#motion').value;
-    $('#miniStiffness').value = $('#stiffness').value;
   }
 
   function setBackground(background) {
@@ -676,7 +718,7 @@
     root.dataset.backdropTone = tone;
     $('#backgroundSelect').value = background;
     $('#miniBackground').value = ['aurora','sunset','night','light'].includes(background) ? background : 'aurora';
-    lensEngine?.setBackdrop(background);
+    window.MorphiqBackdrops?.set(background);
     updateContrastEstimate();
   }
 
@@ -687,7 +729,6 @@
     root.style.setProperty('--accent', normalized);
     root.style.setProperty('--accent-rgb', rgb);
     $('#accentColor').value = normalized;
-    liquidRenderer?.setAccent(normalized);
     renderRecipe();
   }
 
@@ -696,16 +737,12 @@
     root.dataset.quality = quality;
     $('#qualitySelect').value = quality;
     $('#qualityBadge').textContent = quality[0].toUpperCase() + quality.slice(1);
-    lensEngine?.setEnabled(lensActive());
-    syncLenses();
-    liquidController?.refreshOptics?.();
     renderRecipe();
   }
 
   function setReducedMotion(enabled) {
     body.classList.toggle('reduced-motion', enabled);
     $('#reducedMotion').checked = enabled;
-    liquidRenderer?.touch();
   }
 
   function setViewport(viewport) {
@@ -775,7 +812,6 @@
       return `<article class="compare-card" data-style-scope="${style}" data-mq-material="${style}"><header class="compare-card__header"><h3>${title}</h3><p>${window.MorphiqRecipes[style].description}</p></header><div class="compare-card__stage">${markup}</div><div class="compare-card__notes">${note}</div></article>`;
     }).join('');
     attachCompareInteractions($('#compareGrid'));
-    syncLenses($('#compareGrid'));
   }
 
   function attachCompareInteractions(scope) {
@@ -893,15 +929,11 @@
         const output = document.querySelector(`output[for="${input.id}"]`);
         if (output) output.textContent = config.output(input.value);
         if (input.id === 'lightDirection') $('#miniLight').value = input.value;
-        if (input.id === 'motion') $('#miniMotion').value = input.value;
-        if (input.id === 'stiffness') $('#miniStiffness').value = input.value;
-        renderRecipe(); updateContrastEstimate(); liquidController?.refreshOptics?.(); lensEngine?.invalidate();
+        renderRecipe(); updateContrastEstimate();
       });
     });
 
     $('#miniLight').addEventListener('input',event=>{ $('#lightDirection').value=event.target.value; $('#lightDirection').dispatchEvent(new Event('input')); });
-    $('#miniMotion').addEventListener('input',event=>{ $('#motion').value=event.target.value; $('#motion').dispatchEvent(new Event('input')); });
-    $('#miniStiffness').addEventListener('input',event=>{ $('#stiffness').value=event.target.value; $('#stiffness').dispatchEvent(new Event('input')); });
     $('#miniBackground').addEventListener('change',event=>setBackground(event.target.value));
 
     $$('[data-style-switch]').forEach(button=>button.addEventListener('click',()=>setStyle(button.dataset.styleSwitch)));
@@ -941,8 +973,6 @@
     if (view === 'compare') delete root.dataset.mqMaterial;
     else root.dataset.mqMaterial = state.style;
     if (view === 'compare') renderCompare();
-    lensEngine?.setEnabled(lensActive());
-    syncLenses();
   }
 
   function setupCommandPalette() {
@@ -968,105 +998,13 @@
     render('');
   }
 
-  /* Superficies que reciben una lente óptica real. La lista es explícita a
-     propósito: registrar todo el DOM cuesta fill-rate sin decir nada nuevo
-     sobre el material. */
-  const LENS_SELECTOR = [
-    /* .gallery-card NO lleva lente. Apple lo dice literal: "glass cannot sample
-       other glass". La lente muestrea el bitmap del fondo, no lo que hay
-       inmediatamente detrás, así que un elemento anidado dentro de una card de
-       vidrio refractaba el fondo y luego el resultado se componía encima del
-       tinte de la card: dos tintes apilados. Por eso la sidebar y la top nav se
-       veían opacas y una card de primer nivel no.
-       La vitrina deja de ser del material que exhibe. */
-    '.ui-button', '.ui-card', '.switch-control', '.knob',
-    /* `.field input` a secas capturaba los dos <input type=range> del range
-       slider, que están superpuestos con inset:0: dos lentes apiladas en el
-       mismo sitio y una silueta redondeada huérfana debajo del control. Los
-       inputs que no son cajas de texto no son superficies de material. */
-    '.field input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color])',
-    '.field textarea', '.field select',
-    '.top-nav-demo', '.sidebar-demo', '.tabs-demo', '.floating-dock', '.segmented-control',
-    '.music-player', '.weather-widget', '.calendar', '.dropdown-menu', '.tooltip-bubble',
-    '.alert', '.notification-item', '.task-item', '.system-toast', '.demo-modal'
-  ].join(',');
-
-  /* Grupos de fusión: contenedor -> selector de miembros.
-     El motor combina el contenedor y sus miembros con smooth-minimum, y añade
-     una gota de estela cuando un miembro se mueve. Es donde se ve la física:
-     el puente se forma, se estira y se rompe. */
-  const LENS_GROUPS = [
-    ['.switch-control', '.switch-thumb'],
-    ['.segmented-control', '.segmented-indicator'],
-    ['.custom-slider', '.slider-thumb'],
-    ['.demo-dropdown', '.dropdown-trigger, .dropdown-menu.is-open']
-  ];
-
-  /** Materiales cuya receta usa el motor de lentes. */
-  const LENS_MATERIALS = new Set(['liquid-glass']);
-
-  function lensActive() {
-    return Boolean(lensEngine?.supported)
-      && state.quality === 'full'
-      && (state.view === 'compare' || LENS_MATERIALS.has(state.style));
-  }
-
-  /** Registra las lentes del subárbol cuyo material las usa. */
-  function syncLenses(scope = document) {
-    if (!lensEngine) return;
-    lensEngine.prune();
-    if (!lensActive()) return;
-    for (const element of scope.querySelectorAll(LENS_SELECTOR)) {
-      const host = element.closest('[data-mq-material]');
-      if (!host || !LENS_MATERIALS.has(host.dataset.mqMaterial)) continue;
-      lensEngine.register(element);
-    }
-    for (const [container, members] of LENS_GROUPS) {
-      for (const element of scope.querySelectorAll(container)) {
-        const host = element.closest('[data-mq-material]');
-        if (!host || !LENS_MATERIALS.has(host.dataset.mqMaterial)) continue;
-        lensEngine.register(element, members);
-      }
-    }
-    lensEngine.touch();
-  }
-
-  /* El controlador de spring nació hablando con el renderer viejo. Este
-     adaptador conserva su API y redirige los impulsos a la lente del elemento
-     concreto, que es lo que permitió sacar la óptica del playground. */
-  function createRendererAdapter() {
-    const impactAt = (clientX, clientY, strength) => {
-      if (!lensEngine || !lensActive()) return;
-      const target = document.elementFromPoint(clientX, clientY)?.closest(LENS_SELECTOR);
-      if (target) lensEngine.impact(target, clientX, clientY, strength);
-      else lensEngine.touch();
-    };
-    return {
-      addRipple: impactAt,
-      pointerMove: () => lensEngine?.touch(),
-      touch: () => lensEngine?.touch(),
-      setAccent: () => {},
-      setQuality: () => lensEngine?.setEnabled(lensActive())
-    };
-  }
-
-  function initEngine() {
-    lensEngine = new window.MorphiqLensEngine();
-    window.MorphiqLensEngineInstance = lensEngine;
-    const ready = lensEngine.mount(document.body);
-    root.dataset.mqBackdrop = 'canvas';
-    if (!ready) {
-      /* Sin WebGL el laboratorio cae al nivel CSS, pero el fondo por canvas se
-         queda: es 2D y funciona en todas partes. */
-      $('#qualitySelect').value = 'fallback';
-      lensEngine.drawBackdrop();
-    }
-    liquidRenderer = createRendererAdapter();
-    liquidController = new window.LiquidSpringController(liquidRenderer);
+  function initBackdrop() {
+    window.MorphiqBackdrops?.mount(document.body);
+    liquidController = window.LiquidSpringController ? new window.LiquidSpringController() : null;
   }
 
   function init() {
-    initEngine();
+    initBackdrop();
     bindGlobalControls();
     setupCommandPalette();
     setAccent('#6ae4ff');

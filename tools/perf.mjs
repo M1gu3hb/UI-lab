@@ -37,26 +37,24 @@ await page.waitForTimeout(900);
 const stats = await page.evaluate(async duration => {
   const gallery = document.querySelector('#componentGallery');
   gallery.scrollIntoView({ block: 'start', behavior: 'instant' });
-  const lenses = document.querySelectorAll('.mq-lens').length;
+  const lenses = 0;
   const surfaces = document.querySelectorAll('.gallery-card, .ui-button, .ui-card').length;
-  const engine = window.MorphiqLensEngineInstance;
-  let drawn = 0;
-  for (const lens of engine.lenses.values()) {
-    const rect = lens.element.getBoundingClientRect();
-    if (lens.visible && rect.width > 2 && rect.bottom > -120 && rect.top < innerHeight + 120) drawn += 1;
-  }
+  const drawn = document.querySelectorAll('[class*="glass"], .ui-card, .ui-button').length;
 
   /* Caso realista, no sintético: un solo control bajo interacción continua
      mientras el resto de la galería está en pantalla. Golpear 12 botones a la
      vez mide una situación que no ocurre y esconde el número que importa. */
+  /* Sin motor propio, la carga realista es desplazamiento e interacción: es lo
+     que obliga al compositor a rehacer los backdrop-filter. */
   const target = document.querySelector('#componentGallery .ui-button');
   const pump = setInterval(() => {
     if (!target) return;
     const rect = target.getBoundingClientRect();
-    window.MorphiqLensEngineInstance?.impact(
-      target, rect.left + rect.width * Math.random(), rect.top + rect.height / 2, 1
-    );
-  }, 120);
+    target.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true, clientX: rect.left + rect.width * 0.5, clientY: rect.top + rect.height * 0.5
+    }));
+    window.scrollBy(0, 2);
+  }, 60);
 
   const frames = [];
   let previous = performance.now();
@@ -78,8 +76,7 @@ const stats = await page.evaluate(async duration => {
   return {
     lenses,
     drawn,
-    renderScale: engine.renderScale,
-    engineCost: engine.frameCost,
+
     surfaces,
     frames: sorted.length,
     median: percentile(0.5),
@@ -94,8 +91,6 @@ console.log(`lentes registradas: ${stats.lenses} · dibujadas por frame: ${stats
 console.log(`frames medidos: ${stats.frames}`);
 console.log(`frame mediano: ${stats.median.toFixed(2)} ms  (${stats.fpsMedian.toFixed(1)} fps)`);
 console.log(`p95: ${stats.p95.toFixed(2)} ms · peor: ${stats.worst.toFixed(2)} ms`);
-if (stats.lenses) {
-  console.log(`escala de render tras adaptar: ${stats.renderScale.toFixed(3)} · coste interno del motor: ${stats.engineCost.toFixed(1)} ms`);
-}
+
 
 await browser.close();

@@ -406,8 +406,51 @@
     ctx.restore();
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Capa de fondo                                                        */
+  /* ------------------------------------------------------------------ */
+  /* El montaje del canvas vivía dentro del motor de lentes. Al eliminar el
+     motor, el fondo se queda: los fondos con estructura son lo que hace que un
+     vidrio se vea como vidrio, y son 2D — no dependen de WebGL. */
+
+  let canvas = null;
+  let current = 'aurora';
+
+  function resize() {
+    if (!canvas) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const width = Math.max(1, Math.round(window.innerWidth * dpr));
+    const height = Math.max(1, Math.round(window.innerHeight * dpr));
+    if (canvas.width === width && canvas.height === height) return;
+    canvas.width = width;
+    canvas.height = height;
+    draw(canvas, current, width, height);
+  }
+
+  function mount(container = document.body) {
+    if (canvas) return canvas;
+    canvas = document.createElement('canvas');
+    canvas.id = 'mqBackdrop';
+    canvas.setAttribute('aria-hidden', 'true');
+    container.prepend(canvas);
+    document.documentElement.dataset.mqBackdrop = 'canvas';
+    resize();
+    window.addEventListener('resize', resize, { passive: true });
+    return canvas;
+  }
+
+  function set(name) {
+    current = backdrops[name] ? name : 'aurora';
+    if (!canvas) return;
+    draw(canvas, current, canvas.width, canvas.height);
+  }
+
   window.MorphiqBackdrops = {
     draw,
+    mount,
+    set,
+    get current() { return current; },
+    get canvas() { return canvas; },
     names: Object.keys(backdrops),
     isLight: name => LIGHT_BACKDROPS.has(name)
   };
